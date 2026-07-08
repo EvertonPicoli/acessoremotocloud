@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Cloud Remote Access</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .login-container {
+      max-width: 400px;
+      width: 90%;
+      margin: auto;
+      gap: 1.5rem;
+      animation: modalShow 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+  </style>
+</head>
+<body style="min-height: 100vh; display: flex; align-items: center; justify-content: center;">
+  <div class="panel login-container">
+    <div style="text-align: center;">
+      <div class="logo-icon" style="margin: 0 auto 1rem; width: 36px; height: 36px;"></div>
+      <h2>Painel de Controle</h2>
+      <p class="description">Identifique-se para acessar os computadores na nuvem.</p>
+    </div>
+
+    <form id="login-form" style="display: flex; flex-direction: column; gap: 1rem;">
+      <div class="input-group">
+        <label for="username">Usuário</label>
+        <input type="text" id="username" required autocomplete="username">
+      </div>
+
+      <div class="input-group">
+        <label for="password">Senha</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+
+      <div id="login-error" style="display: none; color: #ef4444; font-size: 0.9rem; text-align: center; font-weight: 500;"></div>
+
+      <button type="submit" class="btn" style="width: 100%; margin-top: 0.5rem;">
+        Entrar no Painel
+      </button>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const usernameInput = document.getElementById('username');
+    const passwordInput = document.getElementById('password');
+    const errorMsg = document.getElementById('login-error');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorMsg.style.display = 'none';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            username: usernameInput.value.trim(),
+            password: passwordInput.value
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Login bem-sucedido, redireciona para o dashboard
+          window.location.href = '/';
+        } else {
+          errorMsg.textContent = data.message || 'Usuário ou senha incorretos.';
+          errorMsg.style.display = 'block';
+        }
+      } catch (err) {
+        errorMsg.textContent = 'Erro ao conectar no servidor.';
+        errorMsg.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

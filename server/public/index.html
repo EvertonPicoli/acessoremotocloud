@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Remote Access - Dashboard Central</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    /* Estilos específicos adicionais do Dashboard Central */
+    .dashboard-view {
+      width: 100%;
+      max-width: 1200px;
+      margin: 0 auto;
+      animation: modalShow 0.4s ease;
+    }
+    .agent-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: -0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon"></div>
+      <span id="header-title">CLOUD ACCESS DASHBOARD</span>
+    </div>
+    <div class="status-container">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text">Monitorando Nuvem</span>
+    </div>
+  </header>
+
+  <main style="width: 100%;">
+    <!-- View 1: Dashboard (List of Agents) -->
+    <div id="dashboard-view" class="dashboard-view">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+        <div>
+          <h2>Computadores Online</h2>
+          <p class="description" style="margin-bottom: 0;">Selecione uma máquina ativa para iniciar o controle remoto seguro.</p>
+        </div>
+        <button id="refresh-btn" class="btn btn-secondary" style="height: auto; padding: 0.5rem 1rem;">
+          🔄 Atualizar Lista
+        </button>
+      </div>
+
+      <!-- Grid de Computadores -->
+      <div id="computers-grid" class="computers-grid">
+        <!-- Injetado dinamicamente via JS -->
+      </div>
+
+      <!-- State: Nenhum Computador Disponível -->
+      <div id="empty-state" class="no-computers-state" style="display: none;">
+        <div class="empty-icon">🔌</div>
+        <h3>Nenhum computador conectado</h3>
+        <p class="description" style="max-width: 450px; margin: 0 auto;">Inicie o agente remoto local (`npm start`) em algum computador com acesso à internet para vê-lo listado aqui em tempo real.</p>
+      </div>
+    </div>
+
+    <!-- View 2: Remote Control (Viewport) -->
+    <div id="session-view" class="session-container" style="display: none; width: 100%;">
+      <section class="panel viewport-panel" style="flex: 1;">
+        <!-- Toolbar flutuante -->
+        <div class="toolbar" id="viewport-toolbar">
+          <div class="toolbar-item">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+            Sessão Ativa
+          </div>
+          <div class="toolbar-item" id="active-pc-name">PC: --</div>
+          <div class="toolbar-item" id="latency-display">Latência: -- ms</div>
+          <div class="toolbar-item">
+            Visualização:
+            <select id="view-mode" style="background: rgba(255,255,255,0.08); border: 1px solid var(--glass-border); padding: 0.2rem 0.4rem; font-size: 0.8rem; border-radius: 4px; color: var(--text-main); font-family: inherit; margin-left: 0.25rem;">
+              <option value="contain" style="background: #111119;">Ajustar à Tela</option>
+              <option value="none" style="background: #111119;">Tamanho Original</option>
+              <option value="fill" style="background: #111119;">Esticar</option>
+            </select>
+          </div>
+          <button id="fullscreen-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
+            📺 Tela Cheia
+          </button>
+          <button id="toggle-sidebar-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
+            📋 Logs (Ocultar)
+          </button>
+          <button id="disconnect-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #f87171;">
+            Encerrar Conexão
+          </button>
+        </div>
+
+        <div class="placeholder-view" id="placeholder">
+          <div class="placeholder-icon">💻</div>
+          <h3>Iniciando Sessão</h3>
+          <p class="description">Recebendo transmissão de tela nativa da nuvem...</p>
+        </div>
+
+        <img id="remote-screen" alt="Remote Screen Stream" style="width: 100%; height: 100%; object-fit: contain; cursor: crosshair; display: none;" />
+      </section>
+
+      <!-- Barra lateral de logs da sessão -->
+      <div class="session-sidebar" id="session-sidebar">
+        <h3>Log da Conexão</h3>
+        <div class="console-log" id="console-log" style="height: 100%; max-height: none;">
+          <div class="log-entry info">Console iniciado. Selecione uma máquina para se conectar.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal de PIN de Segurança -->
+  <div id="pin-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="pin-modal-title">Conectar ao Computador</h3>
+        <button id="close-pin-btn" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+        <p class="description" style="margin-bottom: 0;">Insira o PIN de segurança de 6 dígitos que está sendo exibido no terminal da máquina remota.</p>
+        <div class="input-group">
+          <label for="pin-input">PIN de Acesso</label>
+          <input type="password" id="pin-input" placeholder="------" maxlength="6" style="text-align: center; font-size: 1.5rem; letter-spacing: 4px; font-weight: bold;">
+        </div>
+        <div id="auth-error-msg" style="display: none; color: #ef4444; font-size: 0.9rem; text-align: center; font-weight: 500;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="pin-cancel-btn" class="btn btn-secondary">Cancelar</button>
+        <button id="connect-btn" class="btn">Autenticar e Conectar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const consoleLog = document.getElementById('console-log');
+    const placeholder = document.getElementById('placeholder');
+    const remoteScreen = document.getElementById('remote-screen');
+    const toolbar = document.getElementById('viewport-toolbar');
+    const latencyDisplay = document.getElementById('latency-display');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+    const activePcName = document.getElementById('active-pc-name');
+    const viewModeSelect = document.getElementById('view-mode');
+    const fullscreenBtn = document.getElementById('fullscreen-btn');
+    const toggleSidebarBtn = document.getElementById('toggle-sidebar-btn');
+    const sessionSidebar = document.getElementById('session-sidebar');
+
+    const dashboardView = document.getElementById('dashboard-view');
+    const sessionView = document.getElementById('session-view');
+    const computersGrid = document.getElementById('computers-grid');
+    const emptyState = document.getElementById('empty-state');
+    const refreshBtn = document.getElementById('refresh-btn');
+
+    // Elementos do Modal de PIN
+    const pinModal = document.getElementById('pin-modal');
+    const pinModalTitle = document.getElementById('pin-modal-title');
+    const pinInput = document.getElementById('pin-input');
+    const connectBtn = document.getElementById('connect-btn');
+    const authErrorMsg = document.getElementById('auth-error-msg');
+    const closePinBtn = document.getElementById('close-pin-btn');
+    const pinCancelBtn = document.getElementById('pin-cancel-btn');
+
+    let mainWs = null; // WebSocket principal para monitorar a lista
+    let controlWs = null; // WebSocket secundário para controle de tela ativo
+    let pingInterval = null;
+    let selectedAgentId = null;
+    let selectedAgentName = '';
+    let inputHandlersAttached = false;
+
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      consoleLog.appendChild(entry);
+      consoleLog.scrollTop = consoleLog.scrollHeight;
+    }
+
+    // Inicializa monitoramento do dashboard
+    function initDashboardMonitor() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      mainWs = new WebSocket(`${protocol}//${window.location.host}/ws?role=client`);
+
+      mainWs.onopen = () => {
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = 'Nuvem Conectada';
+      };
+
+      mainWs.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'agent-list') {
+          renderAgents(data.agents);
+        }
+      };
+
+      mainWs.onclose = () => {
+        statusDot.className = 'status-dot';
+        statusText.textContent = 'Nuvem Desconectada (Reconectando...)';
+        setTimeout(initDashboardMonitor, 3000);
+      };
+    }
+
+    function renderAgents(agents) {
+      computersGrid.innerHTML = '';
+      if (!agents || agents.length === 0) {
+        emptyState.style.display = 'flex';
+        return;
+      }
+      emptyState.style.display = 'none';
+
+      agents.forEach(agent => {
+        const card = document.createElement('div');
+        card.className = 'computer-card';
+        card.innerHTML = `
+          <div class="computer-icon">💻</div>
+          <div class="computer-name">${agent.name}</div>
+          <div class="agent-meta">ID: ${agent.id.substring(0, 8)}...</div>
+          <div class="computer-status">
+            <span class="pulse-dot"></span>
+            ${agent.isStreaming ? 'Em Sessão' : 'Disponível'}
+          </div>
+        `;
+        card.addEventListener('click', () => {
+          if (agent.isStreaming) {
+            alert('Este computador já está sendo controlado.');
+            return;
+          }
+          openPinPrompt(agent.id, agent.name);
+        });
+        computersGrid.appendChild(card);
+      });
+    }
+
+    function openPinPrompt(id, name) {
+      selectedAgentId = id;
+      selectedAgentName = name;
+      pinModalTitle.textContent = `Conectar a ${name}`;
+      authErrorMsg.style.display = 'none';
+      pinInput.value = '';
+      pinModal.style.display = 'flex';
+      setTimeout(() => pinInput.focus(), 100);
+    }
+
+    function closePinPrompt() {
+      pinModal.style.display = 'none';
+    }
+
+    closePinBtn.addEventListener('click', closePinPrompt);
+    pinCancelBtn.addEventListener('click', closePinPrompt);
+
+    connectBtn.addEventListener('click', () => {
+      const pin = pinInput.value.trim();
+      if (!pin || pin.length !== 6 || isNaN(pin)) {
+        authErrorMsg.textContent = 'Por favor, insira um PIN de 6 dígitos numéricos.';
+        authErrorMsg.style.display = 'block';
+        return;
+      }
+      closePinPrompt();
+      startRemoteControl(selectedAgentId, pin);
+    });
+
+    pinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        connectBtn.click();
+      }
+    });
+
+    function startRemoteControl(agentId, pin) {
+      log(`Iniciando canal de controle para o agente ${selectedAgentName}...`, 'info');
+      
+      // Fecha a conexão principal do dashboard para poupar banda enquanto controla
+      if (mainWs) {
+        mainWs.onclose = null;
+        mainWs.close();
+      }
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      controlWs = new WebSocket(`${protocol}//${window.location.host}/ws?role=client&targetId=${agentId}`);
+
+      controlWs.onopen = () => {
+        log('Canal de conexão aberto. Autenticando com o PIN no agente...', 'info');
+        controlWs.send(JSON.stringify({
+          type: 'auth',
+          password: pin
+        }));
+      };
+
+      controlWs.onmessage = (message) => {
+        const data = JSON.parse(message.data);
+
+        switch (data.type) {
+          case 'auth-success':
+            log(`Autenticado com sucesso no computador: ${selectedAgentName}`, 'success');
+            
+            // Transiciona a tela para visualização de controle
+            dashboardView.style.display = 'none';
+            sessionView.style.display = 'flex';
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = `Controlando: ${selectedAgentName}`;
+            activePcName.textContent = `PC: ${selectedAgentName}`;
+            
+            placeholder.style.display = 'none';
+            remoteScreen.style.display = 'block';
+            toolbar.style.display = 'flex';
+
+            startPing();
+            setupInputHandlers();
+            break;
+
+          case 'auth-error':
+            log(`Erro de autenticação: ${data.message}`, 'error');
+            alert(`Erro de autenticação: ${data.message}`);
+            resetToDashboard();
+            break;
+
+          case 'frame':
+            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
+            break;
+
+          case 'pong':
+            const latency = Date.now() - data.time;
+            latencyDisplay.textContent = `Latência: ${latency} ms`;
+            break;
+
+          case 'error':
+            log(`Erro na sessão: ${data.message}`, 'error');
+            alert(data.message);
+            resetToDashboard();
+            break;
+        }
+      };
+
+      controlWs.onclose = () => {
+        log('Sessão encerrada.', 'info');
+        resetToDashboard();
+      };
+
+      controlWs.onerror = () => {
+        log('Erro na conexão da sessão.', 'error');
+        alert('Erro ao conectar ao agente.');
+        resetToDashboard();
+      };
+    }
+
+    function startPing() {
+      if (pingInterval) clearInterval(pingInterval);
+      pingInterval = setInterval(() => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({ type: 'ping', time: Date.now() }));
+        }
+      }, 1000);
+    }
+
+    function setupInputHandlers() {
+      if (inputHandlersAttached) return;
+      inputHandlersAttached = true;
+
+      remoteScreen.addEventListener('mousemove', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          const rect = remoteScreen.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mousemove',
+              x: x,
+              y: y
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('mousedown', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mousedown',
+              button: e.button
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('mouseup', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mouseup',
+              button: e.button
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+          if (document.activeElement.tagName === 'INPUT') return;
+          
+          if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+            e.preventDefault();
+          }
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'keydown',
+              code: e.code
+            }
+          }));
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+          if (document.activeElement.tagName === 'INPUT') return;
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'keyup',
+              code: e.code
+            }
+          }));
+        }
+      });
+    }
+
+    function resetToDashboard() {
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+
+      if (controlWs) {
+        controlWs.close();
+        controlWs = null;
+      }
+
+      remoteScreen.src = '';
+      remoteScreen.style.display = 'none';
+      placeholder.style.display = 'flex';
+      toolbar.style.display = 'none';
+      sessionView.style.display = 'none';
+      
+      dashboardView.style.display = 'block';
+      statusText.textContent = 'Monitorando Nuvem';
+      
+      initDashboardMonitor();
+    }
+
+    disconnectBtn.addEventListener('click', () => {
+      resetToDashboard();
+    });
+
+    // Controle de modo de visualização (ajustar, tamanho original, esticar)
+    viewModeSelect.addEventListener('change', () => {
+      const mode = viewModeSelect.value;
+      if (mode === 'none') {
+        remoteScreen.style.objectFit = 'none';
+        remoteScreen.style.width = 'auto';
+        remoteScreen.style.height = 'auto';
+        remoteScreen.parentElement.style.overflow = 'auto';
+      } else {
+        remoteScreen.style.objectFit = mode;
+        remoteScreen.style.width = '100%';
+        remoteScreen.style.height = '100%';
+        remoteScreen.parentElement.style.overflow = 'hidden';
+      }
+    });
+
+    // Controle de Tela Cheia (Fullscreen)
+    const viewportPanel = document.querySelector('.viewport-panel');
+    fullscreenBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        viewportPanel.requestFullscreen().catch(err => {
+          console.error(`Erro ao ativar Tela Cheia: ${err.message}`);
+        });
+        fullscreenBtn.textContent = '❌ Sair da Tela Cheia';
+      } else {
+        document.exitFullscreen();
+        fullscreenBtn.textContent = '📺 Tela Cheia';
+      }
+    });
+
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        fullscreenBtn.textContent = '📺 Tela Cheia';
+      }
+    });
+
+    // Controle para ocultar/mostrar a barra lateral de logs
+    toggleSidebarBtn.addEventListener('click', () => {
+      if (sessionSidebar.style.display === 'none') {
+        sessionSidebar.style.display = 'flex';
+        toggleSidebarBtn.textContent = '📋 Logs (Ocultar)';
+      } else {
+        sessionSidebar.style.display = 'none';
+        toggleSidebarBtn.textContent = '📋 Logs (Mostrar)';
+      }
+    });
+
+    refreshBtn.addEventListener('click', () => {
+      if (mainWs && mainWs.readyState === WebSocket.OPEN) {
+        mainWs.send(JSON.stringify({ type: 'refresh' })); // Apenas uma trigger, o servidor atualiza
+      }
+    });
+
+    // Iniciar tudo
+    initDashboardMonitor();
+  </script>
+</body>
+</html>

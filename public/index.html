@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cloud Remote Access - Connection</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .auth-container {
+      max-width: 420px;
+      width: 90%;
+      margin: auto;
+      gap: 1.5rem;
+      animation: modalShow 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-icon"></div>
+      <span id="header-title">CLOUD ACCESS</span>
+    </div>
+    <div class="status-container">
+      <div id="status-dot" class="status-dot"></div>
+      <span id="status-text">Desconectado</span>
+    </div>
+  </header>
+
+  <main style="display: flex; align-items: center; justify-content: center; min-height: calc(100vh - 120px); width: 100%;">
+    <!-- View 1: Auth screen (PIN prompt) -->
+    <div id="auth-view" class="panel auth-container">
+      <h2>PIN de Segurança Necessário</h2>
+      <p class="description">Digite o PIN de segurança configurado para este computador para iniciar o controle remoto direto.</p>
+      
+      <div class="input-group">
+        <label for="pin-input">PIN de Acesso (6 dígitos)</label>
+        <input type="password" id="pin-input" placeholder="------" maxlength="6" style="text-align: center; font-size: 1.5rem; letter-spacing: 4px; font-weight: bold;">
+      </div>
+
+      <div id="auth-error-msg" style="display: none; color: #ef4444; font-size: 0.9rem; text-align: center; font-weight: 500;"></div>
+
+      <button id="connect-btn" class="btn" style="width: 100%; margin-top: 0.5rem;">
+        Conectar e Controlar
+      </button>
+    </div>
+
+    <!-- View 2: Remote Control (Viewport) -->
+    <div id="session-view" class="session-container" style="display: none; height: 100%; min-height: 550px;">
+      <section class="panel viewport-panel" style="flex: 1;">
+        <!-- Toolbar flutuante -->
+        <div class="toolbar" id="viewport-toolbar" style="display: none;">
+          <div class="toolbar-item">
+            <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981;"></span>
+            Controle Ativo
+          </div>
+          <div class="toolbar-item" id="latency-display">Latência: -- ms</div>
+          <button id="settings-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
+            ⚙️ Configurar
+          </button>
+          <button id="disconnect-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #f87171;">
+            Sair
+          </button>
+        </div>
+
+        <div class="placeholder-view" id="placeholder">
+          <div class="placeholder-icon">💻</div>
+          <h3>Iniciando Sessão</h3>
+          <p class="description">Recebendo transmissão de tela nativa...</p>
+        </div>
+
+        <img id="remote-screen" alt="Remote Screen Stream" style="width: 100%; height: 100%; object-fit: contain; cursor: crosshair; display: none;" />
+      </section>
+
+      <!-- Barra lateral de logs da sessão -->
+      <div class="session-sidebar">
+        <h3>Log da Conexão</h3>
+        <div class="console-log" id="console-log" style="height: 100%; max-height: none;">
+          <div class="log-entry info">Console iniciado. Aguardando comando.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal de Configurações do Agente -->
+  <div id="settings-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Configurações do Agente</h3>
+        <button id="close-settings-btn" class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1rem;">
+        <div class="input-group">
+          <label for="computer-name-input">Nome do Computador</label>
+          <input type="text" id="computer-name-input" placeholder="Ex: Meu PC Principal">
+        </div>
+        <div class="input-group">
+          <label for="new-pin-input">PIN de Acesso (6 dígitos)</label>
+          <input type="password" id="new-pin-input" placeholder="------" maxlength="6" style="text-align: center; font-weight: bold; letter-spacing: 2px;">
+        </div>
+        <div id="settings-error" style="display: none; color: #ef4444; font-size: 0.9rem; text-align: center; font-weight: 500;"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="settings-cancel-btn" class="btn btn-secondary">Cancelar</button>
+        <button id="settings-save-btn" class="btn">Salvar Alterações</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const consoleLog = document.getElementById('console-log');
+    const placeholder = document.getElementById('placeholder');
+    const remoteScreen = document.getElementById('remote-screen');
+    const toolbar = document.getElementById('viewport-toolbar');
+    const latencyDisplay = document.getElementById('latency-display');
+    const disconnectBtn = document.getElementById('disconnect-btn');
+
+    const authView = document.getElementById('auth-view');
+    const sessionView = document.getElementById('session-view');
+    const pinInput = document.getElementById('pin-input');
+    const connectBtn = document.getElementById('connect-btn');
+    const authErrorMsg = document.getElementById('auth-error-msg');
+
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const computerNameInput = document.getElementById('computer-name-input');
+    const newPinInput = document.getElementById('new-pin-input');
+    const settingsError = document.getElementById('settings-error');
+    const settingsSaveBtn = document.getElementById('settings-save-btn');
+    const settingsCancelBtn = document.getElementById('settings-cancel-btn');
+    const closeSettingsBtn = document.getElementById('close-settings-btn');
+
+    let ws = null;
+    let pingInterval = null;
+    let computerName = '';
+    let inputHandlersAttached = false;
+
+    function log(message, type = 'info') {
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      consoleLog.appendChild(entry);
+      consoleLog.scrollTop = consoleLog.scrollHeight;
+    }
+
+    connectBtn.addEventListener('click', () => {
+      const pin = pinInput.value.trim();
+      if (!pin || pin.length !== 6 || isNaN(pin)) {
+        authErrorMsg.textContent = 'Por favor, insira um PIN de 6 dígitos numéricos.';
+        authErrorMsg.style.display = 'block';
+        return;
+      }
+
+      initConnection(pin);
+    });
+
+    pinInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        connectBtn.click();
+      }
+    });
+
+    function initConnection(pin) {
+      log('Conectando ao agente...', 'info');
+      authErrorMsg.style.display = 'none';
+
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      // Conecta direto na mesma URL/Porta que serve a página
+      ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+      ws.onopen = () => {
+        log('Canal de conexão aberto. Autenticando com o PIN...', 'info');
+        ws.send(JSON.stringify({
+          type: 'auth',
+          password: pin
+        }));
+      };
+
+      ws.onmessage = (message) => {
+        const data = JSON.parse(message.data);
+
+        switch (data.type) {
+          case 'auth-success':
+            log(`Autenticado com sucesso no computador: ${data.computerName}`, 'success');
+            computerName = data.computerName;
+            
+            // Popula dados no modal de configurações
+            computerNameInput.value = data.computerName;
+            newPinInput.value = data.pin;
+            
+            // Transiciona a tela
+            authView.style.display = 'none';
+            sessionView.style.display = 'flex';
+            statusDot.className = 'status-dot connected';
+            statusText.textContent = `Controlando: ${data.computerName}`;
+            
+            placeholder.style.display = 'none';
+            remoteScreen.style.display = 'block';
+            toolbar.style.display = 'flex';
+
+            startPing();
+            setupInputHandlers();
+            break;
+
+          case 'auth-error':
+            log(`Erro de autenticação: ${data.message}`, 'error');
+            authErrorMsg.textContent = data.message;
+            authErrorMsg.style.display = 'block';
+            ws.close();
+            break;
+
+          case 'frame':
+            // Recebe o screenshot em base64 e atualiza
+            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
+            break;
+
+          case 'pong':
+            const latency = Date.now() - data.time;
+            latencyDisplay.textContent = `Latência: ${latency} ms`;
+            break;
+
+          case 'settings-updated':
+            log('Configurações do computador atualizadas com sucesso.', 'success');
+            computerName = data.computerName;
+            statusText.textContent = `Controlando: ${data.computerName}`;
+            alert('Configurações do Agente salvas com sucesso!');
+            closeSettings();
+            break;
+        }
+      };
+
+      ws.onclose = () => {
+        log('Conexão com o Agente encerrada.', 'info');
+        resetToAuth();
+      };
+
+      ws.onerror = () => {
+        log('Erro na conexão WebSocket.', 'error');
+        authErrorMsg.textContent = 'Erro ao conectar no Agente. O servidor está ativo?';
+        authErrorMsg.style.display = 'block';
+      };
+    }
+
+    function startPing() {
+      if (pingInterval) clearInterval(pingInterval);
+      pingInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping', time: Date.now() }));
+        }
+      }, 1000);
+    }
+
+    function setupInputHandlers() {
+      if (inputHandlersAttached) return;
+      inputHandlersAttached = true;
+
+      remoteScreen.addEventListener('mousemove', (e) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const rect = remoteScreen.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+
+          ws.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mousemove',
+              x: x,
+              y: y
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('mousedown', (e) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mousedown',
+              button: e.button
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('mouseup', (e) => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mouseup',
+              button: e.button
+            }
+          }));
+        }
+      });
+
+      remoteScreen.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (ws && ws.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+          // Ignorar se digitar nos campos do modal de configurações
+          if (document.activeElement.tagName === 'INPUT') return;
+          
+          if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+            e.preventDefault();
+          }
+          ws.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'keydown',
+              code: e.code
+            }
+          }));
+        }
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (ws && ws.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+          if (document.activeElement.tagName === 'INPUT') return;
+          ws.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'keyup',
+              code: e.code
+            }
+          }));
+        }
+      });
+    }
+
+    function resetToAuth() {
+      if (pingInterval) {
+        clearInterval(pingInterval);
+        pingInterval = null;
+      }
+
+      remoteScreen.src = '';
+      remoteScreen.style.display = 'none';
+      placeholder.style.display = 'flex';
+      toolbar.style.display = 'none';
+
+      sessionView.style.display = 'none';
+      authView.style.display = 'flex';
+      statusDot.className = 'status-dot';
+      statusText.textContent = 'Desconectado';
+      pinInput.value = '';
+    }
+
+    // Modal de Configurações
+    settingsBtn.addEventListener('click', () => {
+      settingsError.style.display = 'none';
+      settingsModal.style.display = 'flex';
+    });
+
+    function closeSettings() {
+      settingsModal.style.display = 'none';
+    }
+
+    closeSettingsBtn.addEventListener('click', closeSettings);
+    settingsCancelBtn.addEventListener('click', closeSettings);
+
+    settingsSaveBtn.addEventListener('click', () => {
+      const name = computerNameInput.value.trim();
+      const pin = newPinInput.value.trim();
+
+      if (!name) {
+        settingsError.textContent = 'O nome do computador não pode ser vazio.';
+        settingsError.style.display = 'block';
+        return;
+      }
+      if (pin.length !== 6 || isNaN(pin)) {
+        settingsError.textContent = 'O PIN deve conter exatamente 6 números.';
+        settingsError.style.display = 'block';
+        return;
+      }
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'update-settings',
+          computerName: name,
+          pin: pin
+        }));
+      }
+    });
+
+    disconnectBtn.addEventListener('click', () => {
+      if (ws) {
+        ws.close();
+      }
+    });
+  </script>
+</body>
+</html>

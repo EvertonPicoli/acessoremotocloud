@@ -1,0 +1,22 @@
+{
+  "name": "acessoremotocloud",
+  "version": "1.0.0",
+  "description": "Sistema de acesso remoto WebRTC estilo Chrome Remote Desktop",
+  "main": "local-agent.js",
+  "scripts": {
+    "start": "node local-agent.js",
+    "build": "pkg local-agent.js --targets node18-win-x64 --output InnovaRemoteAgent.exe"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "pkg": {
+    "assets": [
+      "InputSimulator.exe"
+    ]
+  }
+}
