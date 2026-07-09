@@ -87,7 +87,7 @@ if (isPackaged) {
     process.exit(1);
   }
 } else {
-  EXE_FILE = path.join(__dirname, 'InputSimulator_v2.exe');
+  EXE_FILE = path.join(__dirname, 'InputSimulator_v4.exe');
 }
 
 // 1. Compilar o simulador C# se o .exe não existir (Apenas modo desenvolvimento)
@@ -378,31 +378,52 @@ async function processInputQueue() {
           const px = Math.round(action.x * cachedWidth);
           const py = Math.round(action.y * cachedHeight);
           sendInputToHelper(`MOVE ${px} ${py}`);
+          // Pequena pausa para garantir que o mouse se posicionou antes de clicar
+          await new Promise(resolve => setTimeout(resolve, 30));
         }
-        console.log(`[Agente] Clique - Pressionar botão: ${action.button}`);
-        sendInputToHelper(`CLICK_DOWN ${action.button}`);
+        
+        console.log(`[Agente] Clique - Pressionar botão (via C# Simulator): ${action.button}`);
+        sendToSimulator({
+          type: 'mousedown',
+          button: action.button
+        });
+        await new Promise(resolve => setTimeout(resolve, 30));
       } 
       else if (action.type === 'mouseup') {
         if (action.x !== undefined && action.y !== undefined) {
           const px = Math.round(action.x * cachedWidth);
           const py = Math.round(action.y * cachedHeight);
           sendInputToHelper(`MOVE ${px} ${py}`);
+          await new Promise(resolve => setTimeout(resolve, 30));
         }
-        console.log(`[Agente] Clique - Soltar botão: ${action.button}`);
-        sendInputToHelper(`CLICK_UP ${action.button}`);
+        
+        console.log(`[Agente] Clique - Soltar botão (via C# Simulator): ${action.button}`);
+        sendToSimulator({
+          type: 'mouseup',
+          button: action.button
+        });
+        await new Promise(resolve => setTimeout(resolve, 30));
       } 
       else if (action.type === 'keydown') {
         const vk = VK_MAP[action.code];
         if (vk !== undefined) {
-          console.log(`[Agente] Teclado - Pressionar tecla: ${action.code} (VK: ${vk})`);
-          sendInputToHelper(`KEY_DOWN ${vk}`);
+          console.log(`[Agente] Teclado - Pressionar tecla (via C# Simulator): ${action.code} (VK: ${vk})`);
+          sendToSimulator({
+            type: 'keydown',
+            vk: vk
+          });
+          await new Promise(resolve => setTimeout(resolve, 15));
         }
       }
       else if (action.type === 'keyup') {
         const vk = VK_MAP[action.code];
         if (vk !== undefined) {
-          console.log(`[Agente] Teclado - Soltar tecla: ${action.code} (VK: ${vk})`);
-          sendInputToHelper(`KEY_UP ${vk}`);
+          console.log(`[Agente] Teclado - Soltar tecla (via C# Simulator): ${action.code} (VK: ${vk})`);
+          sendToSimulator({
+            type: 'keyup',
+            vk: vk
+          });
+          await new Promise(resolve => setTimeout(resolve, 15));
         }
       }
     } catch (err) {
@@ -413,24 +434,28 @@ async function processInputQueue() {
   isProcessingInput = false;
 }
 
-let tcpSocket = null;
-let reconnectTimer = null;
+let tcpSocketFrame = null;
+let tcpSocketInput = null;
+let reconnectTimerFrame = null;
+let reconnectTimerInput = null;
 let stdoutBuffer = '';
 let wsClient = null;
 let isAuthenticated = false;
 
 function connectToSimulator() {
-  if (reconnectTimer) clearTimeout(reconnectTimer);
+  if (reconnectTimerFrame) clearTimeout(reconnectTimerFrame);
+  if (reconnectTimerInput) clearTimeout(reconnectTimerInput);
   
-  tcpSocket = net.createConnection({ port: 9990, host: '127.0.0.1' }, () => {
-    console.log('✅ Conectado ao InputSimulator via TCP (Porta 9990)!');
+  // Conexão para FRAMES (Porta 9995)
+  tcpSocketFrame = net.createConnection({ port: 9995, host: '127.0.0.1' }, () => {
+    console.log('✅ Conectado ao InputSimulator (Frames) via TCP (Porta 9995)!');
     if (isAuthenticated) {
       console.log('Solicitando início de captura de tela ao simulador...');
-      sendToSimulator({ type: 'start_capture' });
+      sendFrameControlToSimulator({ type: 'start_capture' });
     }
   });
 
-  tcpSocket.on('data', (data) => {
+  tcpSocketFrame.on('data', (data) => {
     stdoutBuffer += data.toString();
     let lines = stdoutBuffer.split('\n');
     stdoutBuffer = lines.pop();
@@ -444,7 +469,6 @@ function connectToSimulator() {
           image: base64
         });
 
-        // Envia frame de vídeo para o servidor central (que repassará ao cliente)
         if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
           wsClient.send(payload);
         }
@@ -456,20 +480,39 @@ function connectToSimulator() {
     }
   });
 
-  tcpSocket.on('error', () => {
-    reconnectTimer = setTimeout(connectToSimulator, 1000);
+  tcpSocketFrame.on('error', () => {
+    reconnectTimerFrame = setTimeout(connectToSimulator, 1000);
   });
 
-  tcpSocket.on('close', () => {
-    reconnectTimer = setTimeout(connectToSimulator, 1000);
+  tcpSocketFrame.on('close', () => {
+    reconnectTimerFrame = setTimeout(connectToSimulator, 1000);
+  });
+
+  // Conexão para INPUTS (Porta 9996)
+  tcpSocketInput = net.createConnection({ port: 9996, host: '127.0.0.1' }, () => {
+    console.log('✅ Conectado ao InputSimulator (Inputs) via TCP (Porta 9996)!');
+  });
+
+  tcpSocketInput.on('error', () => {
+    reconnectTimerInput = setTimeout(connectToSimulator, 1000);
+  });
+
+  tcpSocketInput.on('close', () => {
+    reconnectTimerInput = setTimeout(connectToSimulator, 1000);
   });
 }
 
 connectToSimulator();
 
 function sendToSimulator(payload) {
-  if (tcpSocket && !tcpSocket.destroyed) {
-    tcpSocket.write(JSON.stringify(payload) + '\n');
+  if (tcpSocketInput && !tcpSocketInput.destroyed) {
+    tcpSocketInput.write(JSON.stringify(payload) + '\n');
+  }
+}
+
+function sendFrameControlToSimulator(payload) {
+  if (tcpSocketFrame && !tcpSocketFrame.destroyed) {
+    tcpSocketFrame.write(JSON.stringify(payload) + '\n');
   }
 }
 
@@ -500,7 +543,7 @@ function connectToCentralServer() {
           }));
           console.log('Cliente remoto autenticado via Nuvem. Iniciando captura de tela...');
           updateScreenDimensions();
-          sendToSimulator({ type: 'start_capture' });
+          sendFrameControlToSimulator({ type: 'start_capture' });
         } else {
           wsClient.send(JSON.stringify({ type: 'auth-error', message: 'PIN de segurança incorreto!' }));
           console.log('Tentativa de autenticação com PIN inválido.');
@@ -510,7 +553,7 @@ function connectToCentralServer() {
       else if (data.type === 'stop-capture-relay') {
         console.log('Sessão fechada pelo Dashboard. Parando captura de tela.');
         isAuthenticated = false;
-        sendToSimulator({ type: 'stop_capture' });
+        sendFrameControlToSimulator({ type: 'stop_capture' });
       }
 
       else if (isAuthenticated) {
@@ -539,7 +582,7 @@ function connectToCentralServer() {
   wsClient.on('close', () => {
     console.log('❌ Conexão com o servidor central perdida. Tentando reconectar em 5 segundos...');
     isAuthenticated = false;
-    sendToSimulator({ type: 'stop_capture' });
+    sendFrameControlToSimulator({ type: 'stop_capture' });
     setTimeout(connectToCentralServer, 5000);
   });
 
@@ -558,6 +601,7 @@ if (isPackaged) {
 
 process.on('SIGINT', () => {
   console.log('Encerrando Agente Local...');
-  if (tcpSocket) tcpSocket.end();
+  if (tcpSocketFrame) tcpSocketFrame.end();
+  if (tcpSocketInput) tcpSocketInput.end();
   process.exit(0);
 });

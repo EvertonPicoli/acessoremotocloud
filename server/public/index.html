@@ -94,7 +94,7 @@
           <p class="description">Recebendo transmissão de tela nativa da nuvem...</p>
         </div>
 
-        <img id="remote-screen" alt="Remote Screen Stream" style="width: 100%; height: 100%; object-fit: contain; cursor: crosshair; display: none;" />
+        <img id="remote-screen" alt="Remote Screen Stream" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; cursor: crosshair; display: none;" />
       </section>
 
       <!-- Barra lateral de logs da sessão -->
@@ -349,37 +349,18 @@
       }, 1000);
     }
 
-    // Calcula as coordenadas reais em relação à imagem exibida (descontando barras pretas do object-fit: contain)
+    // Calcula as coordenadas reais em relação à imagem exibida (as barras pretas são excluídas do elemento via CSS)
     function getScaledCoords(clientX, clientY) {
       const rect = remoteScreen.getBoundingClientRect();
       const naturalWidth = remoteScreen.naturalWidth;
       const naturalHeight = remoteScreen.naturalHeight;
-      if (!naturalWidth || !naturalHeight) return null;
+      if (!naturalWidth || !naturalHeight || rect.width === 0 || rect.height === 0) return null;
 
-      const imageRatio = naturalWidth / naturalHeight;
-      const elementRatio = rect.width / rect.height;
+      const clickX = clientX - rect.left;
+      const clickY = clientY - rect.top;
 
-      let displayedWidth, displayedHeight;
-      let offsetLeft = 0;
-      let offsetTop = 0;
-
-      if (elementRatio > imageRatio) {
-        // Barras pretas nas laterais (esquerda/direita)
-        displayedHeight = rect.height;
-        displayedWidth = rect.height * imageRatio;
-        offsetLeft = (rect.width - displayedWidth) / 2;
-      } else {
-        // Barras pretas no topo/rodapé (cima/baixo)
-        displayedWidth = rect.width;
-        displayedHeight = rect.width / imageRatio;
-        offsetTop = (rect.height - displayedHeight) / 2;
-      }
-
-      const clickX = clientX - rect.left - offsetLeft;
-      const clickY = clientY - rect.top - offsetTop;
-
-      const x = clickX / displayedWidth;
-      const y = clickY / displayedHeight;
+      const x = clickX / rect.width;
+      const y = clickY / rect.height;
 
       // Retorna apenas se estiver dentro da área real da captura de tela
       if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
@@ -558,11 +539,22 @@
         remoteScreen.style.objectFit = 'none';
         remoteScreen.style.width = 'auto';
         remoteScreen.style.height = 'auto';
+        remoteScreen.style.maxWidth = 'none';
+        remoteScreen.style.maxHeight = 'none';
         remoteScreen.parentElement.style.overflow = 'auto';
-      } else {
-        remoteScreen.style.objectFit = mode;
+      } else if (mode === 'fill') {
+        remoteScreen.style.objectFit = 'fill';
         remoteScreen.style.width = '100%';
         remoteScreen.style.height = '100%';
+        remoteScreen.style.maxWidth = 'none';
+        remoteScreen.style.maxHeight = 'none';
+        remoteScreen.parentElement.style.overflow = 'hidden';
+      } else { // contain
+        remoteScreen.style.objectFit = 'contain';
+        remoteScreen.style.width = 'auto';
+        remoteScreen.style.height = 'auto';
+        remoteScreen.style.maxWidth = '100%';
+        remoteScreen.style.maxHeight = '100%';
         remoteScreen.parentElement.style.overflow = 'hidden';
       }
     });
