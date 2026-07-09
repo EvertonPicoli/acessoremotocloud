@@ -4,55 +4,43 @@ using System.Text.RegularExpressions;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
 
 class InputSimulator
 {
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, IntPtr dwExtraInfo);
+
     [DllImport("user32.dll", SetLastError = true)]
-    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+    private static extern bool SetCursorPos(int X, int Y);
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct INPUT
-    {
-        public uint type;
-        public InputUnion u;
-    }
+    [DllImport("user32.dll")]
+    private static extern bool ClipCursor(IntPtr rect);
 
-    [StructLayout(LayoutKind.Explicit)]
-    struct InputUnion
-    {
-        [FieldOffset(0)] public MOUSEINPUT mi;
-        [FieldOffset(0)] public KEYBDINPUT ki;
-        [FieldOffset(0)] public HARDWAREINPUT hi;
-    }
+    [DllImport("user32.dll")]
+    private static extern bool BlockInput(bool fBlockIt);
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct MOUSEINPUT
-    {
-        public int dx;
-        public int dy;
-        public uint mouseData;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
-    }
+    [DllImport("user32.dll")]
+    private static extern bool SetProcessDPIAware();
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct KEYBDINPUT
-    {
-        public ushort wVk;
-        public ushort wScan;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
-    }
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
 
-    [StructLayout(LayoutKind.Sequential)]
-    struct HARDWAREINPUT
-    {
-        public uint uMsg;
-        public ushort wParamL;
-        public ushort wParamH;
-    }
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(int dwProcessId);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AllocConsole();
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetConsoleWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
     [StructLayout(LayoutKind.Sequential)]
     struct CURSORINFO
@@ -95,11 +83,27 @@ class InputSimulator
 
     static bool isCapturing = false;
     static System.Threading.Thread captureThread;
+    static StreamWriter tcpWriter = null;
+
+    static void LogToAgent(string message)
+    {
+        if (tcpWriter != null)
+        {
+            try
+            {
+                tcpWriter.WriteLine("LOG:" + message);
+                tcpWriter.Flush();
+            }
+            catch {}
+        }
+        Console.WriteLine(message);
+    }
 
     static void StartCapture()
     {
         if (isCapturing) return;
         isCapturing = true;
+        LogToAgent("[Simulator] StartCapture() chamado, iniciando thread de captura...");
         captureThread = new System.Threading.Thread(CaptureLoop);
         captureThread.IsBackground = true;
         captureThread.Start();
@@ -112,6 +116,7 @@ class InputSimulator
 
     static void CaptureLoop()
     {
+        LogToAgent("[Simulator] CaptureLoop() thread iniciada.");
         int width = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
         int height = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
         
@@ -167,7 +172,20 @@ class InputSimulator
                             scaledBmp.Save(ms, jpgEncoder, myEncoderParameters);
                             byte[] bytes = ms.ToArray();
                             string base64 = Convert.ToBase64String(bytes);
-                            Console.WriteLine("FRAME:" + base64);
+                             if (tcpWriter != null)
+                             {
+                                 try
+                                 {
+                                     tcpWriter.WriteLine("FRAME:" + base64);
+                                     tcpWriter.Flush();
+                                     // Log periódico (aproximadamente a cada 100 frames) para debug sem flood
+                                     if (new Random().Next(0, 100) == 0)
+                                     {
+                                         LogToAgent("[Simulator] Loop de captura ativo (enviando frames...)");
+                                     }
+                                 }
+                                 catch {}
+                             }
                         }
                     }
                 }
@@ -195,129 +213,153 @@ class InputSimulator
 
     static void Main()
     {
+        try { SetProcessDPIAware(); } catch {}
+        try
+        {
+            foreach (var screen in System.Windows.Forms.Screen.AllScreens)
+            {
+                Console.WriteLine(string.Format("SCREEN_INFO: Device={0} Bounds={1} Primary={2}", screen.DeviceName, screen.Bounds, screen.Primary));
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("SCREEN_INFO_ERROR: " + ex.Message);
+        }
         Console.WriteLine("InputSimulator Ready");
-        string line;
-        
+
         Regex typeRegex = new Regex("\"type\"\\s*:\\s*\"([^\"]+)\"", RegexOptions.Compiled);
         Regex xRegex = new Regex("\"x\"\\s*:\\s*([0-9.]+)", RegexOptions.Compiled);
         Regex yRegex = new Regex("\"y\"\\s*:\\s*([0-9.]+)", RegexOptions.Compiled);
         Regex buttonRegex = new Regex("\"button\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
         Regex vkRegex = new Regex("\"vk\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
 
-        while ((line = Console.ReadLine()) != null)
+        // Inicia um servidor TCP local na porta 9990 para receber os inputs
+        TcpListener server = null;
+        try
+        {
+            server = new TcpListener(IPAddress.Loopback, 9990);
+            server.Start();
+            Console.WriteLine("[Simulator] Servidor TCP ativo em 127.0.0.1:9990");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("Erro ao iniciar servidor TCP do Simulator: " + ex.Message);
+            return;
+        }
+
+        // Loop principal aceitando conexões (geralmente uma única conexão persistente do Node.js)
+        while (true)
         {
             try
             {
-                Match typeMatch = typeRegex.Match(line);
-                if (!typeMatch.Success) continue;
-                string type = typeMatch.Groups[1].Value;
-
-                INPUT[] inputs = new INPUT[1];
-                uint result = 0;
-
-                if (type == "start_capture")
+                using (TcpClient client = server.AcceptTcpClient())
+                using (NetworkStream stream = client.GetStream())
+                using (StreamReader reader = new StreamReader(stream))
+                using (StreamWriter writer = new StreamWriter(stream))
                 {
-                    StartCapture();
-                }
-                else if (type == "stop_capture")
-                {
-                    StopCapture();
-                }
-                else if (type == "mousemove")
-                {
-                    Match xMatch = xRegex.Match(line);
-                    Match yMatch = yRegex.Match(line);
-                    if (xMatch.Success && yMatch.Success)
+                    tcpWriter = writer;
+                    Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP");
+                    string line;
+                    while ((line = reader.ReadLine()) != null)
                     {
-                        double x = double.Parse(xMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-                        double y = double.Parse(yMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-
-                        inputs[0].type = INPUT_MOUSE;
-                        inputs[0].u.mi.dx = (int)x;
-                        inputs[0].u.mi.dy = (int)y;
-                        inputs[0].u.mi.dwFlags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE;
-                        
-                        result = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
-                        if (result == 0)
+                        try
                         {
-                            Console.Error.WriteLine("Error: SendInput returned 0 for mousemove. Win32 Error: " + Marshal.GetLastWin32Error());
+                            Match typeMatch = typeRegex.Match(line);
+                            if (!typeMatch.Success) continue;
+                            string type = typeMatch.Groups[1].Value;
+
+                            if (type == "start_capture")
+                            {
+                                StartCapture();
+                            }
+                            else if (type == "stop_capture")
+                            {
+                                StopCapture();
+                            }
+                            else if (type == "mousemove")
+                            {
+                                Match xMatch = xRegex.Match(line);
+                                Match yMatch = yRegex.Match(line);
+                                if (xMatch.Success && yMatch.Success)
+                                {
+                                    double x = double.Parse(xMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                                    double y = double.Parse(yMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+
+                                    int screenWidth = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
+                                    int screenHeight = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
+                                    int pixelX = (int)(x * screenWidth / 65535.0);
+                                    int pixelY = (int)(y * screenHeight / 65535.0);
+                                    BlockInput(false);
+                                    ClipCursor(IntPtr.Zero);
+                                    bool moved = SetCursorPos(pixelX, pixelY);
+                                    int err = Marshal.GetLastWin32Error();
+                                    LogToAgent(string.Format("[Simulator] MouseMove to ({0}, {1}) -> ({2}, {3}) moved={4} error={5} executed", x, y, pixelX, pixelY, moved, err));
+                                }
+                            }
+                            else if (type == "mousedown")
+                            {
+                                Match btnMatch = buttonRegex.Match(line);
+                                if (btnMatch.Success)
+                                {
+                                    int button = int.Parse(btnMatch.Groups[1].Value);
+                                    uint flags = 0;
+                                    if (button == 0) flags = MOUSEEVENTF_LEFTDOWN;
+                                    else if (button == 2) flags = MOUSEEVENTF_RIGHTDOWN;
+                                    else if (button == 1) flags = MOUSEEVENTF_MIDDLEDOWN;
+
+                                    mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                    LogToAgent(string.Format("[Simulator] MouseDown button={0} executed", button));
+                                }
+                            }
+                            else if (type == "mouseup")
+                            {
+                                Match btnMatch = buttonRegex.Match(line);
+                                if (btnMatch.Success)
+                                {
+                                    int button = int.Parse(btnMatch.Groups[1].Value);
+                                    uint flags = 0;
+                                    if (button == 0) flags = MOUSEEVENTF_LEFTUP;
+                                    else if (button == 2) flags = MOUSEEVENTF_RIGHTUP;
+                                    else if (button == 1) flags = MOUSEEVENTF_MIDDLEUP;
+
+                                    mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                    LogToAgent(string.Format("[Simulator] MouseUp button={0} executed", button));
+                                }
+                            }
+                            else if (type == "keydown")
+                            {
+                                Match vkMatch = vkRegex.Match(line);
+                                if (vkMatch.Success)
+                                {
+                                    ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                    byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                    keybd_event((byte)vk, scanCode, KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                    LogToAgent(string.Format("[Simulator] KeyDown vk={0} scan={1} executed", vk, scanCode));
+                                }
+                            }
+                            else if (type == "keyup")
+                            {
+                                Match vkMatch = vkRegex.Match(line);
+                                if (vkMatch.Success)
+                                {
+                                    ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                    byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                    keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
+                                    LogToAgent(string.Format("[Simulator] KeyUp vk={0} scan={1} executed", vk, scanCode));
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.Error.WriteLine("Error simulating input: " + ex.Message);
                         }
                     }
-                }
-                else if (type == "mousedown")
-                {
-                    Match btnMatch = buttonRegex.Match(line);
-                    if (btnMatch.Success)
-                    {
-                        int button = int.Parse(btnMatch.Groups[1].Value);
-                        inputs[0].type = INPUT_MOUSE;
-                        if (button == 0) inputs[0].u.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-                        else if (button == 2) inputs[0].u.mi.dwFlags = MOUSEEVENTF_RIGHTDOWN;
-                        else if (button == 1) inputs[0].u.mi.dwFlags = MOUSEEVENTF_MIDDLEDOWN;
-
-                        result = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
-                        if (result == 0)
-                        {
-                            Console.Error.WriteLine("Error: SendInput returned 0 for mousedown. Win32 Error: " + Marshal.GetLastWin32Error());
-                        }
-                    }
-                }
-                else if (type == "mouseup")
-                {
-                    Match btnMatch = buttonRegex.Match(line);
-                    if (btnMatch.Success)
-                    {
-                        int button = int.Parse(btnMatch.Groups[1].Value);
-                        inputs[0].type = INPUT_MOUSE;
-                        if (button == 0) inputs[0].u.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-                        else if (button == 2) inputs[0].u.mi.dwFlags = MOUSEEVENTF_RIGHTUP;
-                        else if (button == 1) inputs[0].u.mi.dwFlags = MOUSEEVENTF_MIDDLEUP;
-
-                        result = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
-                        if (result == 0)
-                        {
-                            Console.Error.WriteLine("Error: SendInput returned 0 for mouseup. Win32 Error: " + Marshal.GetLastWin32Error());
-                        }
-                    }
-                }
-                else if (type == "keydown")
-                {
-                    Match vkMatch = vkRegex.Match(line);
-                    if (vkMatch.Success)
-                    {
-                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                        inputs[0].type = INPUT_KEYBOARD;
-                        inputs[0].u.ki.wVk = vk;
-                        inputs[0].u.ki.dwFlags = KEYEVENTF_KEYDOWN;
-
-                        result = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
-                        if (result == 0)
-                        {
-                            Console.Error.WriteLine("Error: SendInput returned 0 for keydown. Win32 Error: " + Marshal.GetLastWin32Error());
-                        }
-                    }
-                }
-                else if (type == "keyup")
-                {
-                    Match vkMatch = vkRegex.Match(line);
-                    if (vkMatch.Success)
-                    {
-                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                        inputs[0].type = INPUT_KEYBOARD;
-                        inputs[0].u.ki.wVk = vk;
-                        inputs[0].u.ki.dwFlags = KEYEVENTF_KEYUP;
-
-                        result = SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
-                        if (result == 0)
-                        {
-                            Console.Error.WriteLine("Error: SendInput returned 0 for keyup. Win32 Error: " + Marshal.GetLastWin32Error());
-                        }
-                    }
+                    tcpWriter = null;
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.Error.WriteLine("Error simulating input: " + ex.Message);
+                // Conexão do cliente fechou ou caiu, aguarda a próxima
             }
         }
     }

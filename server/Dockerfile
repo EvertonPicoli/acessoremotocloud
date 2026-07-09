@@ -5,10 +5,10 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Copiar arquivos de dependências
-COPY package.json ./
+COPY package*.json ./
 
 # Instalar dependências de produção
-RUN npm install --omit=dev
+RUN npm ci --only=production
 
 # Copiar o código fonte do servidor e a pasta estática
 COPY server.js ./

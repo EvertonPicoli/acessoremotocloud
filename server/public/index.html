@@ -349,50 +349,145 @@
       }, 1000);
     }
 
+    // Calcula as coordenadas reais em relação à imagem exibida (descontando barras pretas do object-fit: contain)
+    function getScaledCoords(clientX, clientY) {
+      const rect = remoteScreen.getBoundingClientRect();
+      const naturalWidth = remoteScreen.naturalWidth;
+      const naturalHeight = remoteScreen.naturalHeight;
+      if (!naturalWidth || !naturalHeight) return null;
+
+      const imageRatio = naturalWidth / naturalHeight;
+      const elementRatio = rect.width / rect.height;
+
+      let displayedWidth, displayedHeight;
+      let offsetLeft = 0;
+      let offsetTop = 0;
+
+      if (elementRatio > imageRatio) {
+        // Barras pretas nas laterais (esquerda/direita)
+        displayedHeight = rect.height;
+        displayedWidth = rect.height * imageRatio;
+        offsetLeft = (rect.width - displayedWidth) / 2;
+      } else {
+        // Barras pretas no topo/rodapé (cima/baixo)
+        displayedWidth = rect.width;
+        displayedHeight = rect.width / imageRatio;
+        offsetTop = (rect.height - displayedHeight) / 2;
+      }
+
+      const clickX = clientX - rect.left - offsetLeft;
+      const clickY = clientY - rect.top - offsetTop;
+
+      const x = clickX / displayedWidth;
+      const y = clickY / displayedHeight;
+
+      // Retorna apenas se estiver dentro da área real da captura de tela
+      if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+        return { x, y };
+      }
+      return null;
+    }
+
     function setupInputHandlers() {
       if (inputHandlersAttached) return;
       inputHandlersAttached = true;
 
       remoteScreen.addEventListener('mousemove', (e) => {
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-          const rect = remoteScreen.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
-
-          controlWs.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'mousemove',
-              x: x,
-              y: y
-            }
-          }));
+          const coords = getScaledCoords(e.clientX, e.clientY);
+          if (coords) {
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: {
+                type: 'mousemove',
+                x: coords.x,
+                y: coords.y
+              }
+            }));
+          }
         }
       });
 
       remoteScreen.addEventListener('mousedown', (e) => {
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-          controlWs.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'mousedown',
-              button: e.button
-            }
-          }));
+          const coords = getScaledCoords(e.clientX, e.clientY);
+          if (coords) {
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: {
+                type: 'mousedown',
+                button: e.button,
+                x: coords.x,
+                y: coords.y
+              }
+            }));
+          }
         }
       });
 
       remoteScreen.addEventListener('mouseup', (e) => {
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-          controlWs.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'mouseup',
-              button: e.button
-            }
-          }));
+          const coords = getScaledCoords(e.clientX, e.clientY);
+          if (coords) {
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: {
+                type: 'mouseup',
+                button: e.button,
+                x: coords.x,
+                y: coords.y
+              }
+            }));
+          }
         }
       });
+
+      // Suporte para Toque / Gestos (Celular e Tablet)
+      remoteScreen.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 0) {
+          const touch = e.touches[0];
+          const coords = getScaledCoords(touch.clientX, touch.clientY);
+          
+          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+            // Primeiro posiciona o cursor
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousemove', x: coords.x, y: coords.y }
+            }));
+            // Depois clica (mousedown)
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
+            }));
+          }
+        }
+        e.preventDefault(); // Evita scroll do navegador ao tocar
+      }, { passive: false });
+
+      remoteScreen.addEventListener('touchmove', (e) => {
+        if (e.touches.length > 0) {
+          const touch = e.touches[0];
+          const coords = getScaledCoords(touch.clientX, touch.clientY);
+
+          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousemove', x: coords.x, y: coords.y }
+            }));
+          }
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      remoteScreen.addEventListener('touchend', (e) => {
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: { type: 'mouseup', button: 0 }
+          }));
+        }
+        e.preventDefault();
+      }, { passive: false });
 
       remoteScreen.addEventListener('contextmenu', (e) => {
         e.preventDefault();

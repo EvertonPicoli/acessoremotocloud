@@ -8,6 +8,7 @@
     "build": "pkg local-agent.js --targets node18-win-x64 --output InnovaRemoteAgent.exe"
   },
   "dependencies": {
+    "@nut-tree-fork/nut-js": "^4.2.6",
     "express": "^4.19.2",
     "ws": "^8.17.1"
   },

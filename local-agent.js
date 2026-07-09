@@ -4,6 +4,8 @@ const path = require('path');
 const WebSocket = require('ws');
 const os = require('os');
 const crypto = require('crypto');
+const net = require('net');
+const { mouse, keyboard, Button, Point, Key, screen } = require('@nut-tree-fork/nut-js');
 
 const isPackaged = typeof process.pkg !== 'undefined';
 
@@ -85,7 +87,7 @@ if (isPackaged) {
     process.exit(1);
   }
 } else {
-  EXE_FILE = path.join(__dirname, 'InputSimulator.exe');
+  EXE_FILE = path.join(__dirname, 'InputSimulator_v2.exe');
 }
 
 // 1. Compilar o simulador C# se o .exe não existir (Apenas modo desenvolvimento)
@@ -248,7 +250,33 @@ console.log(`🌐 SERVIDOR CENTRAL: ${config.centralServer}`);
 console.log('====================================\n');
 
 // Mapeamento de KeyboardEvent.code para Windows Virtual Key Codes (VK)
+// Mapeamento de KeyboardEvent.code para nut.js Key
 const KEY_MAP = {
+  'KeyA': Key.A, 'KeyB': Key.B, 'KeyC': Key.C, 'KeyD': Key.D, 'KeyE': Key.E, 'KeyF': Key.F, 'KeyG': Key.G, 'KeyH': Key.H,
+  'KeyI': Key.I, 'KeyJ': Key.J, 'KeyK': Key.K, 'KeyL': Key.L, 'KeyM': Key.M, 'KeyN': Key.N, 'KeyO': Key.O, 'KeyP': Key.P,
+  'KeyQ': Key.Q, 'KeyR': Key.R, 'KeyS': Key.S, 'KeyT': Key.T, 'KeyU': Key.U, 'KeyV': Key.V, 'KeyW': Key.W, 'KeyX': Key.X,
+  'KeyY': Key.Y, 'KeyZ': Key.Z,
+  'Digit0': Key.Num0, 'Digit1': Key.Num1, 'Digit2': Key.Num2, 'Digit3': Key.Num3, 'Digit4': Key.Num4, 'Digit5': Key.Num5, 'Digit6': Key.Num6,
+  'Digit7': Key.Num7, 'Digit8': Key.Num8, 'Digit9': Key.Num9,
+  'F1': Key.F1, 'F2': Key.F2, 'F3': Key.F3, 'F4': Key.F4, 'F5': Key.F5, 'F6': Key.F6, 'F7': Key.F7, 'F8': Key.F8, 'F9': Key.F9,
+  'F10': Key.F10, 'F11': Key.F11, 'F12': Key.F12,
+  'Enter': Key.Enter, 'NumpadEnter': Key.Enter,
+  'Escape': Key.Escape,
+  'Space': Key.Space,
+  'Backspace': Key.Backspace,
+  'Tab': Key.Tab,
+  'ShiftLeft': Key.LeftShift, 'ShiftRight': Key.RightShift,
+  'ControlLeft': Key.LeftControl, 'ControlRight': Key.RightControl,
+  'AltLeft': Key.LeftAlt, 'AltRight': Key.RightAlt,
+  'MetaLeft': Key.LeftSuper, 'MetaRight': Key.RightSuper,
+  'ArrowLeft': Key.Left, 'ArrowUp': Key.Up, 'ArrowRight': Key.Right, 'ArrowDown': Key.Down,
+  'Delete': Key.Delete, 'Insert': Key.Insert, 'Home': Key.Home, 'End': Key.End, 'PageUp': Key.PageUp, 'PageDown': Key.PageDown,
+  'CapsLock': Key.CapsLock, 'ScrollLock': Key.ScrollLock, 'NumLock': Key.NumLock,
+  'Semicolon': Key.Semicolon, 'Equal': Key.Equal, 'Comma': Key.Comma, 'Minus': Key.Minus, 'Period': Key.Period, 'Slash': Key.Slash,
+  'Backquote': Key.Grave, 'BracketLeft': Key.LeftBracket, 'Backslash': Key.Backslash, 'BracketRight': Key.RightBracket, 'Quote': Key.Quote
+};
+
+const VK_MAP = {
   'KeyA': 0x41, 'KeyB': 0x42, 'KeyC': 0x43, 'KeyD': 0x44, 'KeyE': 0x45, 'KeyF': 0x46, 'KeyG': 0x47, 'KeyH': 0x48,
   'KeyI': 0x49, 'KeyJ': 0x4A, 'KeyK': 0x4B, 'KeyL': 0x4C, 'KeyM': 0x4D, 'KeyN': 0x4E, 'KeyO': 0x4F, 'KeyP': 0x50,
   'KeyQ': 0x51, 'KeyR': 0x52, 'KeyS': 0x53, 'KeyT': 0x54, 'KeyU': 0x55, 'KeyV': 0x56, 'KeyW': 0x57, 'KeyX': 0x58,
@@ -257,14 +285,8 @@ const KEY_MAP = {
   'Digit7': 0x37, 'Digit8': 0x38, 'Digit9': 0x39,
   'F1': 0x70, 'F2': 0x71, 'F3': 0x72, 'F4': 0x73, 'F5': 0x74, 'F6': 0x75, 'F7': 0x76, 'F8': 0x77, 'F9': 0x78,
   'F10': 0x79, 'F11': 0x7A, 'F12': 0x7B,
-  'Enter': 0x0D, 'NumpadEnter': 0x0D,
-  'Escape': 0x1B,
-  'Space': 0x20,
-  'Backspace': 0x08,
-  'Tab': 0x09,
-  'ShiftLeft': 0xA0, 'ShiftRight': 0xA1,
-  'ControlLeft': 0xA2, 'ControlRight': 0xA3,
-  'AltLeft': 0xA4, 'AltRight': 0xA5,
+  'Enter': 0x0D, 'NumpadEnter': 0x0D, 'Escape': 0x1B, 'Space': 0x20, 'Backspace': 0x08, 'Tab': 0x09,
+  'ShiftLeft': 0xA0, 'ShiftRight': 0xA1, 'ControlLeft': 0xA2, 'ControlRight': 0xA3, 'AltLeft': 0x12, 'AltRight': 0x12,
   'MetaLeft': 0x5B, 'MetaRight': 0x5C,
   'ArrowLeft': 0x25, 'ArrowUp': 0x26, 'ArrowRight': 0x27, 'ArrowDown': 0x28,
   'Delete': 0x2E, 'Insert': 0x2D, 'Home': 0x24, 'End': 0x23, 'PageUp': 0x21, 'PageDown': 0x22,
@@ -273,60 +295,198 @@ const KEY_MAP = {
   'Backquote': 0xC0, 'BracketLeft': 0xDB, 'Backslash': 0xDC, 'BracketRight': 0xDD, 'Quote': 0xDE
 };
 
-// 3. Iniciar o processo do InputSimulator
+let psInputHelper = null;
+
+function startInputHelper() {
+  const scriptPath = path.join(__dirname, 'scratch', 'input-helper.ps1');
+  console.log('Iniciando input-helper.ps1 em background...');
+  psInputHelper = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]);
+
+  psInputHelper.stdout.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) console.log(`[InputHelper] STDOUT: ${msg}`);
+  });
+
+  psInputHelper.stderr.on('data', (data) => {
+    console.error(`[InputHelper] STDERR: ${data.toString().trim()}`);
+  });
+
+  psInputHelper.on('close', (code) => {
+    console.warn(`[InputHelper] Processo fechado com código ${code}. Reiniciando...`);
+    setTimeout(startInputHelper, 1000);
+  });
+}
+
+startInputHelper();
+
+function sendInputToHelper(cmd) {
+  if (psInputHelper && psInputHelper.stdin.writable) {
+    psInputHelper.stdin.write(cmd + '\n');
+  }
+}
+
+// 3. Iniciar o processo do InputSimulator (com janela visível para manter privilégios interativos)
 console.log('Iniciando InputSimulator.exe...');
-const inputSim = spawn(EXE_FILE);
-
-inputSim.stderr.on('data', (data) => {
-  console.error(`[InputSimulator Error]: ${data.toString().trim()}`);
+const cmdLine = `cmd.exe /c start "" "${EXE_FILE}"`;
+exec(cmdLine, (err) => {
+  if (err) console.error('Erro ao iniciar InputSimulator.exe:', err.message);
 });
 
-inputSim.on('close', (code) => {
-  console.log(`Processo InputSimulator finalizado com código ${code}`);
-  process.exit(code);
-});
+let cachedWidth = 1920;
+let cachedHeight = 1080;
+let screenLeftOffset = 0;
+let screenTopOffset = 0;
 
-// Buffer para ler stdout por linha (evita quebrar frames base64 longos)
+async function updateScreenDimensions() {
+  try {
+    cachedWidth = await screen.width();
+    cachedHeight = await screen.height();
+    console.log(`[Agente] Resolução da tela carregada: ${cachedWidth}x${cachedHeight}`);
+
+    // Obter origens do desktop virtual para corrigir injeção em múltiplos monitores
+    const output = execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SystemInformation]::VirtualScreen.Left; [System.Windows.Forms.SystemInformation]::VirtualScreen.Top"', { encoding: 'utf8' });
+    const lines = output.trim().split('\n');
+    if (lines.length >= 2) {
+      screenLeftOffset = parseInt(lines[0].trim()) || 0;
+      screenTopOffset = parseInt(lines[1].trim()) || 0;
+      console.log(`[Agente] Offsets do monitor principal carregados: Left=${screenLeftOffset}, Top=${screenTopOffset}`);
+    }
+  } catch (err) {
+    console.error('Erro ao ler dimensões da tela:', err.message);
+  }
+}
+
+updateScreenDimensions();
+
+const inputQueue = [];
+let isProcessingInput = false;
+
+async function processInputQueue() {
+  if (isProcessingInput || inputQueue.length === 0) return;
+  isProcessingInput = true;
+
+  while (inputQueue.length > 0) {
+    const action = inputQueue.shift();
+    try {
+      if (action.type === 'mousemove') {
+        const px = Math.round(action.x * cachedWidth);
+        const py = Math.round(action.y * cachedHeight);
+        sendInputToHelper(`MOVE ${px} ${py}`);
+      } 
+      else if (action.type === 'mousedown') {
+        if (action.x !== undefined && action.y !== undefined) {
+          const px = Math.round(action.x * cachedWidth);
+          const py = Math.round(action.y * cachedHeight);
+          sendInputToHelper(`MOVE ${px} ${py}`);
+        }
+        console.log(`[Agente] Clique - Pressionar botão: ${action.button}`);
+        sendInputToHelper(`CLICK_DOWN ${action.button}`);
+      } 
+      else if (action.type === 'mouseup') {
+        if (action.x !== undefined && action.y !== undefined) {
+          const px = Math.round(action.x * cachedWidth);
+          const py = Math.round(action.y * cachedHeight);
+          sendInputToHelper(`MOVE ${px} ${py}`);
+        }
+        console.log(`[Agente] Clique - Soltar botão: ${action.button}`);
+        sendInputToHelper(`CLICK_UP ${action.button}`);
+      } 
+      else if (action.type === 'keydown') {
+        const vk = VK_MAP[action.code];
+        if (vk !== undefined) {
+          console.log(`[Agente] Teclado - Pressionar tecla: ${action.code} (VK: ${vk})`);
+          sendInputToHelper(`KEY_DOWN ${vk}`);
+        }
+      }
+      else if (action.type === 'keyup') {
+        const vk = VK_MAP[action.code];
+        if (vk !== undefined) {
+          console.log(`[Agente] Teclado - Soltar tecla: ${action.code} (VK: ${vk})`);
+          sendInputToHelper(`KEY_UP ${vk}`);
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao processar ação de input sequencial:', err.message);
+    }
+  }
+
+  isProcessingInput = false;
+}
+
+let tcpSocket = null;
+let reconnectTimer = null;
 let stdoutBuffer = '';
 let wsClient = null;
 let isAuthenticated = false;
 
-inputSim.stdout.on('data', (data) => {
-  stdoutBuffer += data.toString();
-  let lines = stdoutBuffer.split('\n');
-  stdoutBuffer = lines.pop();
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('FRAME:')) {
-      const base64 = trimmed.substring(6);
-      const payload = JSON.stringify({
-        type: 'frame',
-        image: base64
-      });
-
-      // Envia frame de vídeo para o servidor central (que repassará ao cliente)
-      if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
-        wsClient.send(payload);
-      }
-    } else {
-      console.log(`[InputSimulator]: ${trimmed}`);
+function connectToSimulator() {
+  if (reconnectTimer) clearTimeout(reconnectTimer);
+  
+  tcpSocket = net.createConnection({ port: 9990, host: '127.0.0.1' }, () => {
+    console.log('✅ Conectado ao InputSimulator via TCP (Porta 9990)!');
+    if (isAuthenticated) {
+      console.log('Solicitando início de captura de tela ao simulador...');
+      sendToSimulator({ type: 'start_capture' });
     }
+  });
+
+  tcpSocket.on('data', (data) => {
+    stdoutBuffer += data.toString();
+    let lines = stdoutBuffer.split('\n');
+    stdoutBuffer = lines.pop();
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('FRAME:')) {
+        const base64 = trimmed.substring(6);
+        const payload = JSON.stringify({
+          type: 'frame',
+          image: base64
+        });
+
+        // Envia frame de vídeo para o servidor central (que repassará ao cliente)
+        if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
+          wsClient.send(payload);
+        }
+      } else if (trimmed.startsWith('LOG:')) {
+        console.log(`[InputSimulator]: ${trimmed.substring(4)}`);
+      } else if (trimmed) {
+        console.log(`[InputSimulator]: ${trimmed}`);
+      }
+    }
+  });
+
+  tcpSocket.on('error', () => {
+    reconnectTimer = setTimeout(connectToSimulator, 1000);
+  });
+
+  tcpSocket.on('close', () => {
+    reconnectTimer = setTimeout(connectToSimulator, 1000);
+  });
+}
+
+connectToSimulator();
+
+function sendToSimulator(payload) {
+  if (tcpSocket && !tcpSocket.destroyed) {
+    tcpSocket.write(JSON.stringify(payload) + '\n');
   }
-});
+}
 
 // 4. Conectar e manter canal com o Servidor Central
 function connectToCentralServer() {
   console.log('Conectando ao servidor central...');
   
   const connectionUrl = `${config.centralServer}?role=agent&id=${config.id}&name=${encodeURIComponent(config.computerName)}`;
-  wsClient = new WebSocket(connectionUrl);
+  wsClient = new WebSocket(connectionUrl, {
+    rejectUnauthorized: false
+  });
 
   wsClient.on('open', () => {
     console.log('✅ Conexão estabelecida com o servidor central!');
   });
 
-  wsClient.on('message', (message) => {
+  wsClient.on('message', async (message) => {
     try {
       const data = JSON.parse(message);
 
@@ -339,7 +499,8 @@ function connectToCentralServer() {
             pin: config.pin 
           }));
           console.log('Cliente remoto autenticado via Nuvem. Iniciando captura de tela...');
-          inputSim.stdin.write(JSON.stringify({ type: 'start_capture' }) + '\n');
+          updateScreenDimensions();
+          sendToSimulator({ type: 'start_capture' });
         } else {
           wsClient.send(JSON.stringify({ type: 'auth-error', message: 'PIN de segurança incorreto!' }));
           console.log('Tentativa de autenticação com PIN inválido.');
@@ -349,7 +510,7 @@ function connectToCentralServer() {
       else if (data.type === 'stop-capture-relay') {
         console.log('Sessão fechada pelo Dashboard. Parando captura de tela.');
         isAuthenticated = false;
-        inputSim.stdin.write(JSON.stringify({ type: 'stop_capture' }) + '\n');
+        sendToSimulator({ type: 'stop_capture' });
       }
 
       else if (isAuthenticated) {
@@ -360,30 +521,14 @@ function connectToCentralServer() {
         else if (data.type === 'input') {
           const action = data.action;
           
-          if (action.type === 'mousemove') {
-            const scaledX = Math.round(action.x * 65535);
-            const scaledY = Math.round(action.y * 65535);
-            inputSim.stdin.write(JSON.stringify({
-              type: 'mousemove',
-              x: scaledX,
-              y: scaledY
-            }) + '\n');
-          } 
-          else if (action.type === 'mousedown' || action.type === 'mouseup') {
-            inputSim.stdin.write(JSON.stringify({
-              type: action.type,
-              button: action.button
-            }) + '\n');
-          } 
-          else if (action.type === 'keydown' || action.type === 'keyup') {
-            const vk = KEY_MAP[action.code];
-            if (vk !== undefined) {
-              inputSim.stdin.write(JSON.stringify({
-                type: action.type,
-                vk: vk
-              }) + '\n');
-            }
+          // Otimização: se for mousemove e o último item na fila também for mousemove,
+          // substitui o último para evitar atraso/lag acumulado!
+          if (action.type === 'mousemove' && inputQueue.length > 0 && inputQueue[inputQueue.length - 1].type === 'mousemove') {
+            inputQueue[inputQueue.length - 1] = action;
+          } else {
+            inputQueue.push(action);
           }
+          processInputQueue();
         }
       }
     } catch (err) {
@@ -394,7 +539,7 @@ function connectToCentralServer() {
   wsClient.on('close', () => {
     console.log('❌ Conexão com o servidor central perdida. Tentando reconectar em 5 segundos...');
     isAuthenticated = false;
-    inputSim.stdin.write(JSON.stringify({ type: 'stop_capture' }) + '\n');
+    sendToSimulator({ type: 'stop_capture' });
     setTimeout(connectToCentralServer, 5000);
   });
 
@@ -413,6 +558,6 @@ if (isPackaged) {
 
 process.on('SIGINT', () => {
   console.log('Encerrando Agente Local...');
-  if (inputSim) inputSim.kill();
+  if (tcpSocket) tcpSocket.end();
   process.exit(0);
 });
