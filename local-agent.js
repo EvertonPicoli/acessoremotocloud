@@ -5,7 +5,6 @@ const WebSocket = require('ws');
 const os = require('os');
 const crypto = require('crypto');
 const net = require('net');
-const { mouse, keyboard, Button, Point, Key, screen } = require('@nut-tree-fork/nut-js');
 
 const isPackaged = typeof process.pkg !== 'undefined';
 
@@ -87,7 +86,7 @@ if (isPackaged) {
     process.exit(1);
   }
 } else {
-  EXE_FILE = path.join(__dirname, 'InputSimulator_v4.exe');
+  EXE_FILE = path.join(__dirname, 'InputSimulator_v5.exe');
 }
 
 // 1. Compilar o simulador C# se o .exe não existir (Apenas modo desenvolvimento)
@@ -250,32 +249,6 @@ console.log(`🌐 SERVIDOR CENTRAL: ${config.centralServer}`);
 console.log('====================================\n');
 
 // Mapeamento de KeyboardEvent.code para Windows Virtual Key Codes (VK)
-// Mapeamento de KeyboardEvent.code para nut.js Key
-const KEY_MAP = {
-  'KeyA': Key.A, 'KeyB': Key.B, 'KeyC': Key.C, 'KeyD': Key.D, 'KeyE': Key.E, 'KeyF': Key.F, 'KeyG': Key.G, 'KeyH': Key.H,
-  'KeyI': Key.I, 'KeyJ': Key.J, 'KeyK': Key.K, 'KeyL': Key.L, 'KeyM': Key.M, 'KeyN': Key.N, 'KeyO': Key.O, 'KeyP': Key.P,
-  'KeyQ': Key.Q, 'KeyR': Key.R, 'KeyS': Key.S, 'KeyT': Key.T, 'KeyU': Key.U, 'KeyV': Key.V, 'KeyW': Key.W, 'KeyX': Key.X,
-  'KeyY': Key.Y, 'KeyZ': Key.Z,
-  'Digit0': Key.Num0, 'Digit1': Key.Num1, 'Digit2': Key.Num2, 'Digit3': Key.Num3, 'Digit4': Key.Num4, 'Digit5': Key.Num5, 'Digit6': Key.Num6,
-  'Digit7': Key.Num7, 'Digit8': Key.Num8, 'Digit9': Key.Num9,
-  'F1': Key.F1, 'F2': Key.F2, 'F3': Key.F3, 'F4': Key.F4, 'F5': Key.F5, 'F6': Key.F6, 'F7': Key.F7, 'F8': Key.F8, 'F9': Key.F9,
-  'F10': Key.F10, 'F11': Key.F11, 'F12': Key.F12,
-  'Enter': Key.Enter, 'NumpadEnter': Key.Enter,
-  'Escape': Key.Escape,
-  'Space': Key.Space,
-  'Backspace': Key.Backspace,
-  'Tab': Key.Tab,
-  'ShiftLeft': Key.LeftShift, 'ShiftRight': Key.RightShift,
-  'ControlLeft': Key.LeftControl, 'ControlRight': Key.RightControl,
-  'AltLeft': Key.LeftAlt, 'AltRight': Key.RightAlt,
-  'MetaLeft': Key.LeftSuper, 'MetaRight': Key.RightSuper,
-  'ArrowLeft': Key.Left, 'ArrowUp': Key.Up, 'ArrowRight': Key.Right, 'ArrowDown': Key.Down,
-  'Delete': Key.Delete, 'Insert': Key.Insert, 'Home': Key.Home, 'End': Key.End, 'PageUp': Key.PageUp, 'PageDown': Key.PageDown,
-  'CapsLock': Key.CapsLock, 'ScrollLock': Key.ScrollLock, 'NumLock': Key.NumLock,
-  'Semicolon': Key.Semicolon, 'Equal': Key.Equal, 'Comma': Key.Comma, 'Minus': Key.Minus, 'Period': Key.Period, 'Slash': Key.Slash,
-  'Backquote': Key.Grave, 'BracketLeft': Key.LeftBracket, 'Backslash': Key.Backslash, 'BracketRight': Key.RightBracket, 'Quote': Key.Quote
-};
-
 const VK_MAP = {
   'KeyA': 0x41, 'KeyB': 0x42, 'KeyC': 0x43, 'KeyD': 0x44, 'KeyE': 0x45, 'KeyF': 0x46, 'KeyG': 0x47, 'KeyH': 0x48,
   'KeyI': 0x49, 'KeyJ': 0x4A, 'KeyK': 0x4B, 'KeyL': 0x4C, 'KeyM': 0x4D, 'KeyN': 0x4E, 'KeyO': 0x4F, 'KeyP': 0x50,
@@ -332,24 +305,17 @@ exec(cmdLine, (err) => {
   if (err) console.error('Erro ao iniciar InputSimulator.exe:', err.message);
 });
 
-let cachedWidth = 1920;
+let cachedWidth = 2560;
 let cachedHeight = 1080;
-let screenLeftOffset = 0;
-let screenTopOffset = 0;
 
-async function updateScreenDimensions() {
+function updateScreenDimensions() {
   try {
-    cachedWidth = await screen.width();
-    cachedHeight = await screen.height();
-    console.log(`[Agente] Resolução da tela carregada: ${cachedWidth}x${cachedHeight}`);
-
-    // Obter origens do desktop virtual para corrigir injeção em múltiplos monitores
-    const output = execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SystemInformation]::VirtualScreen.Left; [System.Windows.Forms.SystemInformation]::VirtualScreen.Top"', { encoding: 'utf8' });
-    const lines = output.trim().split('\n');
-    if (lines.length >= 2) {
-      screenLeftOffset = parseInt(lines[0].trim()) || 0;
-      screenTopOffset = parseInt(lines[1].trim()) || 0;
-      console.log(`[Agente] Offsets do monitor principal carregados: Left=${screenLeftOffset}, Top=${screenTopOffset}`);
+    const output = execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; Write-Output ($s.Width.ToString() + \\" \\" + $s.Height.ToString())"', { encoding: 'utf8' });
+    const parts = output.trim().split(' ');
+    if (parts.length >= 2) {
+      cachedWidth = parseInt(parts[0]) || 2560;
+      cachedHeight = parseInt(parts[1]) || 1080;
+      console.log(`[Agente] Resolução da tela principal: ${cachedWidth}x${cachedHeight}`);
     }
   } catch (err) {
     console.error('Erro ao ler dimensões da tela:', err.message);
@@ -361,7 +327,7 @@ updateScreenDimensions();
 const inputQueue = [];
 let isProcessingInput = false;
 
-async function processInputQueue() {
+function processInputQueue() {
   if (isProcessingInput || inputQueue.length === 0) return;
   isProcessingInput = true;
 
@@ -371,63 +337,43 @@ async function processInputQueue() {
       if (action.type === 'mousemove') {
         const px = Math.round(action.x * cachedWidth);
         const py = Math.round(action.y * cachedHeight);
-        sendInputToHelper(`MOVE ${px} ${py}`);
+        sendToSimulator({ type: 'mousemove', x: px, y: py });
       } 
       else if (action.type === 'mousedown') {
         if (action.x !== undefined && action.y !== undefined) {
           const px = Math.round(action.x * cachedWidth);
           const py = Math.round(action.y * cachedHeight);
-          sendInputToHelper(`MOVE ${px} ${py}`);
-          // Pequena pausa para garantir que o mouse se posicionou antes de clicar
-          await new Promise(resolve => setTimeout(resolve, 30));
+          sendToSimulator({ type: 'mousemove', x: px, y: py });
         }
         
         console.log(`[Agente] Clique - Pressionar botão (via C# Simulator): ${action.button}`);
-        sendToSimulator({
-          type: 'mousedown',
-          button: action.button
-        });
-        await new Promise(resolve => setTimeout(resolve, 30));
+        sendToSimulator({ type: 'mousedown', button: action.button });
       } 
       else if (action.type === 'mouseup') {
         if (action.x !== undefined && action.y !== undefined) {
           const px = Math.round(action.x * cachedWidth);
           const py = Math.round(action.y * cachedHeight);
-          sendInputToHelper(`MOVE ${px} ${py}`);
-          await new Promise(resolve => setTimeout(resolve, 30));
+          sendToSimulator({ type: 'mousemove', x: px, y: py });
         }
         
         console.log(`[Agente] Clique - Soltar botão (via C# Simulator): ${action.button}`);
-        sendToSimulator({
-          type: 'mouseup',
-          button: action.button
-        });
-        await new Promise(resolve => setTimeout(resolve, 30));
+        sendToSimulator({ type: 'mouseup', button: action.button });
       } 
       else if (action.type === 'keydown') {
         const vk = VK_MAP[action.code];
         if (vk !== undefined) {
-          console.log(`[Agente] Teclado - Pressionar tecla (via C# Simulator): ${action.code} (VK: ${vk})`);
-          sendToSimulator({
-            type: 'keydown',
-            vk: vk
-          });
-          await new Promise(resolve => setTimeout(resolve, 15));
+          console.log(`[Agente] Teclado - Pressionar tecla: ${action.code} (VK: ${vk})`);
+          sendToSimulator({ type: 'keydown', vk: vk });
         }
       }
       else if (action.type === 'keyup') {
         const vk = VK_MAP[action.code];
         if (vk !== undefined) {
-          console.log(`[Agente] Teclado - Soltar tecla (via C# Simulator): ${action.code} (VK: ${vk})`);
-          sendToSimulator({
-            type: 'keyup',
-            vk: vk
-          });
-          await new Promise(resolve => setTimeout(resolve, 15));
+          sendToSimulator({ type: 'keyup', vk: vk });
         }
       }
     } catch (err) {
-      console.error('Erro ao processar ação de input sequencial:', err.message);
+      console.error('Erro ao processar ação de input:', err.message);
     }
   }
 
@@ -442,13 +388,15 @@ let stdoutBuffer = '';
 let wsClient = null;
 let isAuthenticated = false;
 
-function connectToSimulator() {
+function connectFrameSocket() {
   if (reconnectTimerFrame) clearTimeout(reconnectTimerFrame);
-  if (reconnectTimerInput) clearTimeout(reconnectTimerInput);
+  if (tcpSocketFrame && !tcpSocketFrame.destroyed) {
+    tcpSocketFrame.removeAllListeners();
+    tcpSocketFrame.destroy();
+  }
   
-  // Conexão para FRAMES (Porta 9995)
-  tcpSocketFrame = net.createConnection({ port: 9995, host: '127.0.0.1' }, () => {
-    console.log('✅ Conectado ao InputSimulator (Frames) via TCP (Porta 9995)!');
+  tcpSocketFrame = net.createConnection({ port: 9997, host: '127.0.0.1' }, () => {
+    console.log('✅ Conectado ao InputSimulator (Frames) via TCP (Porta 9997)!');
     if (isAuthenticated) {
       console.log('Solicitando início de captura de tela ao simulador...');
       sendFrameControlToSimulator({ type: 'start_capture' });
@@ -464,13 +412,13 @@ function connectToSimulator() {
       const trimmed = line.trim();
       if (trimmed.startsWith('FRAME:')) {
         const base64 = trimmed.substring(6);
-        const payload = JSON.stringify({
-          type: 'frame',
-          image: base64
-        });
 
         if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
-          wsClient.send(payload);
+          // Controle de backpressure: se o buffer do WebSocket estiver cheio, pular este frame
+          if (wsClient.bufferedAmount < 1024 * 1024) {
+            const payload = JSON.stringify({ type: 'frame', image: base64 });
+            wsClient.send(payload);
+          }
         }
       } else if (trimmed.startsWith('LOG:')) {
         console.log(`[InputSimulator]: ${trimmed.substring(4)}`);
@@ -481,28 +429,36 @@ function connectToSimulator() {
   });
 
   tcpSocketFrame.on('error', () => {
-    reconnectTimerFrame = setTimeout(connectToSimulator, 1000);
+    reconnectTimerFrame = setTimeout(connectFrameSocket, 2000);
   });
 
   tcpSocketFrame.on('close', () => {
-    reconnectTimerFrame = setTimeout(connectToSimulator, 1000);
-  });
-
-  // Conexão para INPUTS (Porta 9996)
-  tcpSocketInput = net.createConnection({ port: 9996, host: '127.0.0.1' }, () => {
-    console.log('✅ Conectado ao InputSimulator (Inputs) via TCP (Porta 9996)!');
-  });
-
-  tcpSocketInput.on('error', () => {
-    reconnectTimerInput = setTimeout(connectToSimulator, 1000);
-  });
-
-  tcpSocketInput.on('close', () => {
-    reconnectTimerInput = setTimeout(connectToSimulator, 1000);
+    reconnectTimerFrame = setTimeout(connectFrameSocket, 2000);
   });
 }
 
-connectToSimulator();
+function connectInputSocket() {
+  if (reconnectTimerInput) clearTimeout(reconnectTimerInput);
+  if (tcpSocketInput && !tcpSocketInput.destroyed) {
+    tcpSocketInput.removeAllListeners();
+    tcpSocketInput.destroy();
+  }
+
+  tcpSocketInput = net.createConnection({ port: 9998, host: '127.0.0.1' }, () => {
+    console.log('✅ Conectado ao InputSimulator (Inputs) via TCP (Porta 9998)!');
+  });
+
+  tcpSocketInput.on('error', () => {
+    reconnectTimerInput = setTimeout(connectInputSocket, 2000);
+  });
+
+  tcpSocketInput.on('close', () => {
+    reconnectTimerInput = setTimeout(connectInputSocket, 2000);
+  });
+}
+
+connectFrameSocket();
+connectInputSocket();
 
 function sendToSimulator(payload) {
   if (tcpSocketInput && !tcpSocketInput.destroyed) {

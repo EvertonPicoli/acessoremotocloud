@@ -284,7 +284,28 @@
       };
 
       controlWs.onmessage = (message) => {
-        const data = JSON.parse(message.data);
+        const raw = message.data;
+        
+        // Otimização: frames são as mensagens mais frequentes e pesadas.
+        // Evitar JSON.parse neles — verificar o prefixo da string diretamente.
+        if (raw.indexOf('"type":"frame"') !== -1) {
+          // Extrair base64 sem JSON.parse (muito mais rápido)
+          const imgStart = raw.indexOf('"image":"') + 9;
+          const imgEnd = raw.lastIndexOf('"');
+          if (imgStart > 9 && imgEnd > imgStart) {
+            // Throttle: só atualizar se o frame anterior já foi renderizado
+            if (!remoteScreen._pendingFrame) {
+              remoteScreen._pendingFrame = true;
+              remoteScreen.src = 'data:image/jpeg;base64,' + raw.substring(imgStart, imgEnd);
+              // Liberar para o próximo frame após renderizar
+              remoteScreen.onload = () => { remoteScreen._pendingFrame = false; };
+              remoteScreen.onerror = () => { remoteScreen._pendingFrame = false; };
+            }
+          }
+          return;
+        }
+        
+        const data = JSON.parse(raw);
 
         switch (data.type) {
           case 'auth-success':
@@ -309,10 +330,6 @@
             log(`Erro de autenticação: ${data.message}`, 'error');
             alert(`Erro de autenticação: ${data.message}`);
             resetToDashboard();
-            break;
-
-          case 'frame':
-            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
             break;
 
           case 'pong':

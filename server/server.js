@@ -176,10 +176,20 @@ wss.on('connection', (ws, request) => {
       // Repassar tudo do agente para o respectivo cliente conectado
       const agentData = agents.get(id);
       if (agentData && agentData.clientWs && agentData.clientWs.readyState === WebSocket.OPEN) {
+        // Controle de backpressure: verificar se o cliente está acompanhando
+        // Se o buffer do WebSocket do cliente estiver cheio, descartar frames (mas nunca descartar comandos)
+        const msgStr = isBinary ? null : message.toString();
+        const isFrame = msgStr && msgStr.indexOf('"type":"frame"') !== -1;
+        
+        if (isFrame && agentData.clientWs.bufferedAmount > 512 * 1024) {
+          // Pular este frame - o cliente não está consumindo rápido o suficiente
+          return;
+        }
+        
         if (isBinary) {
           agentData.clientWs.send(message);
         } else {
-          agentData.clientWs.send(message.toString());
+          agentData.clientWs.send(msgStr);
         }
       }
     });

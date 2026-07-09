@@ -30,6 +30,9 @@ class InputSimulator
     [DllImport("user32.dll")]
     static extern bool DrawIcon(IntPtr hDC, int x, int y, IntPtr hIcon);
 
+    [DllImport("user32.dll")]
+    static extern bool SetCursorPos(int X, int Y);
+
     [StructLayout(LayoutKind.Sequential)]
     struct CURSORINFO
     {
@@ -78,7 +81,15 @@ class InputSimulator
 
     static void StartCapture()
     {
-        if (isCapturing) return;
+        // Se já está capturando, para e reinicia para usar o novo tcpWriter
+        if (isCapturing)
+        {
+            isCapturing = false;
+            if (captureThread != null)
+            {
+                captureThread.Join(500);
+            }
+        }
         isCapturing = true;
         LogToAgent("[Simulator] StartCapture() chamado, iniciando thread de captura...");
         captureThread = new System.Threading.Thread(CaptureLoop);
@@ -225,9 +236,9 @@ class InputSimulator
         TcpListener server = null;
         try
         {
-            server = new TcpListener(IPAddress.Loopback, 9995);
+            server = new TcpListener(IPAddress.Loopback, 9997);
             server.Start();
-            Console.WriteLine("[Simulator] Servidor TCP de FRAMES ativo em 127.0.0.1:9995");
+            Console.WriteLine("[Simulator] Servidor TCP de FRAMES ativo em 127.0.0.1:9997");
         }
         catch (Exception ex)
         {
@@ -278,13 +289,15 @@ class InputSimulator
         Regex typeRegex = new Regex("\"type\"\\s*:\\s*\"([^\"]+)\"", RegexOptions.Compiled);
         Regex buttonRegex = new Regex("\"button\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
         Regex vkRegex = new Regex("\"vk\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
+        Regex xRegex = new Regex("\"x\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
+        Regex yRegex = new Regex("\"y\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
 
         TcpListener server = null;
         try
         {
-            server = new TcpListener(IPAddress.Loopback, 9996);
+            server = new TcpListener(IPAddress.Loopback, 9998);
             server.Start();
-            Console.WriteLine("[Simulator] Servidor TCP de INPUTS ativo em 127.0.0.1:9996");
+            Console.WriteLine("[Simulator] Servidor TCP de INPUTS ativo em 127.0.0.1:9998");
         }
         catch (Exception ex)
         {
@@ -310,7 +323,18 @@ class InputSimulator
                             if (!typeMatch.Success) continue;
                             string type = typeMatch.Groups[1].Value;
 
-                            if (type == "mousedown")
+                            if (type == "mousemove")
+                            {
+                                Match xMatch = xRegex.Match(line);
+                                Match yMatch = yRegex.Match(line);
+                                if (xMatch.Success && yMatch.Success)
+                                {
+                                    int x = int.Parse(xMatch.Groups[1].Value);
+                                    int y = int.Parse(yMatch.Groups[1].Value);
+                                    SetCursorPos(x, y);
+                                }
+                            }
+                            else if (type == "mousedown")
                             {
                                 Match btnMatch = buttonRegex.Match(line);
                                 if (btnMatch.Success)
