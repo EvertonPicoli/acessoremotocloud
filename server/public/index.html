@@ -283,6 +283,7 @@
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       controlWs = new WebSocket(`${protocol}//${window.location.host}/ws?role=client&targetId=${agentId}`);
+      controlWs.binaryType = 'blob';
 
       controlWs.onopen = () => {
         log('Canal de conexão aberto. Autenticando com o PIN no agente...', 'info');
@@ -295,17 +296,18 @@
       controlWs.onmessage = (message) => {
         const raw = message.data;
         
-        // Otimização: frames são as mensagens mais frequentes e pesadas.
-        // Evitar JSON.parse neles — verificar o prefixo da string diretamente.
-        if (raw.indexOf('"type":"frame"') !== -1) {
-          // Extrair base64 sem JSON.parse (muito mais rápido)
-          const imgStart = raw.indexOf('"image":"') + 9;
-          const imgEnd = raw.lastIndexOf('"');
-          if (imgStart > 9 && imgEnd > imgStart) {
-            remoteScreen.src = 'data:image/jpeg;base64,' + raw.substring(imgStart, imgEnd);
-            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-              controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-            }
+        // Se for um Blob binário, trata como frame de tela direto (otimização extrema sem base64 ou JSON)
+        if (raw instanceof Blob) {
+          const oldUrl = remoteScreen.src;
+          const newUrl = URL.createObjectURL(raw);
+          remoteScreen.src = newUrl;
+          
+          if (oldUrl && oldUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(oldUrl); // Libera memória GDI/RAM da imagem antiga
+          }
+          
+          if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+            controlWs.send(JSON.stringify({ type: 'frame_ack' }));
           }
           return;
         }

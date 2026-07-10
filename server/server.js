@@ -179,9 +179,9 @@ wss.on('connection', (ws, request) => {
         // Controle de backpressure: verificar se o cliente está acompanhando
         // Se o buffer do WebSocket do cliente estiver cheio, descartar frames (mas nunca descartar comandos)
         const msgStr = isBinary ? null : message.toString();
-        const isFrame = msgStr && msgStr.indexOf('"type":"frame"') !== -1;
+        const isFrame = isBinary || (msgStr && msgStr.indexOf('"type":"frame"') !== -1);
         
-        if (isFrame && agentData.clientWs.bufferedAmount > 512 * 1024) {
+        if (isFrame && agentData.clientWs.bufferedAmount > 256 * 1024) {
           // Pular este frame - o cliente não está consumindo rápido o suficiente
           return;
         }

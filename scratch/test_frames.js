@@ -1,7 +1,7 @@
 const net = require('net');
 
 console.log("Connecting to port 9995 (Frames)...");
-const socket = net.createConnection({ port: 9995, host: '127.0.0.1' }, () => {
+const socket = net.createConnection({ port: 9997, host: '127.0.0.1' }, () => {
   console.log("Connected! Sending start_capture...");
   socket.write(JSON.stringify({ type: 'start_capture' }) + '\n');
 });

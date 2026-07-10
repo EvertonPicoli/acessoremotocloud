@@ -176,6 +176,7 @@
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       // Conecta direto na mesma URL/Porta que serve a página
       ws = new WebSocket(`${protocol}//${window.location.host}`);
+      ws.binaryType = 'blob';
 
       ws.onopen = () => {
         log('Canal de conexão aberto. Autenticando com o PIN...', 'info');
@@ -186,7 +187,25 @@
       };
 
       ws.onmessage = (message) => {
-        const data = JSON.parse(message.data);
+        const raw = message.data;
+
+        // Se for um Blob binário, trata como frame de tela direto (otimização extrema sem base64 ou JSON)
+        if (raw instanceof Blob) {
+          const oldUrl = remoteScreen.src;
+          const newUrl = URL.createObjectURL(raw);
+          remoteScreen.src = newUrl;
+          
+          if (oldUrl && oldUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(oldUrl); // Libera memória GDI/RAM da imagem antiga
+          }
+          
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'frame_ack' }));
+          }
+          return;
+        }
+
+        const data = JSON.parse(raw);
 
         switch (data.type) {
           case 'auth-success':
@@ -219,14 +238,6 @@
             authErrorMsg.textContent = data.message;
             authErrorMsg.style.display = 'block';
             ws.close();
-            break;
-
-          case 'frame':
-            // Recebe o screenshot em base64 e atualiza enviando confirmação (ACK) imediata para solicitar o próximo
-            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
-            if (ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'frame_ack' }));
-            }
             break;
 
           case 'pong':

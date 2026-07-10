@@ -412,8 +412,7 @@ function trySendPendingFrame() {
     if (clientReadyForFrame) {
       clientReadyForFrame = false;
       lastFrameSentTime = now;
-      const payload = JSON.stringify({ type: 'frame', image: pendingFrameToSend });
-      wsClient.send(payload);
+      wsClient.send(pendingFrameToSend, { binary: true });
       pendingFrameToSend = null; // Limpa após enviar
     }
   }
@@ -456,7 +455,7 @@ function connectFrameSocket() {
     }
 
     if (newestFrameBase64) {
-      pendingFrameToSend = newestFrameBase64;
+      pendingFrameToSend = Buffer.from(newestFrameBase64, 'base64');
       trySendPendingFrame();
     }
   });
