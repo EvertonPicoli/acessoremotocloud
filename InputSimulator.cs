@@ -131,15 +131,8 @@ class InputSimulator
 
     static void StartCapture()
     {
-        // Se já está capturando, para e reinicia para usar o novo tcpWriter
-        if (isCapturing)
-        {
-            isCapturing = false;
-            if (captureThread != null)
-            {
-                captureThread.Join(500);
-            }
-        }
+        if (isCapturing) return; // Se já está rodando, não reinicia (evita concorrência e vazamento de thread)
+        
         isCapturing = true;
         LogToAgent("[Simulator] StartCapture() chamado, iniciando thread de captura...");
         captureThread = new System.Threading.Thread(CaptureLoop);
@@ -156,35 +149,29 @@ class InputSimulator
     {
         LogToAgent("[Simulator] CaptureLoop() thread iniciada.");
         
-        var screens = System.Windows.Forms.Screen.AllScreens;
-        System.Windows.Forms.Screen screen = System.Windows.Forms.Screen.PrimaryScreen;
-        if (selectedScreenIndex >= 0 && selectedScreenIndex < screens.Length)
-        {
-            screen = screens[selectedScreenIndex];
-        }
-
-        int width = screen.Bounds.Width;
-        int height = screen.Bounds.Height;
-        int screenX = screen.Bounds.X;
-        int screenY = screen.Bounds.Y;
-        
-        double scale = 1.0;
-        if (width > 1280) {
-            scale = 1280.0 / width;
-        }
-        int destWidth = (int)(width * scale);
-        int destHeight = (int)(height * scale);
-
-        ImageCodecInfo jpgEncoder = GetEncoder(ImageFormat.Jpeg);
-        Encoder myEncoder = Encoder.Quality;
-        EncoderParameters myEncoderParameters = new EncoderParameters(1);
-        EncoderParameter myEncoderParameter = new EncoderParameter(myEncoder, 35L); 
-        myEncoderParameters.Param[0] = myEncoderParameter;
-
         while (isCapturing)
         {
             try
             {
+                var screens = System.Windows.Forms.Screen.AllScreens;
+                System.Windows.Forms.Screen screen = System.Windows.Forms.Screen.PrimaryScreen;
+                if (selectedScreenIndex >= 0 && selectedScreenIndex < screens.Length)
+                {
+                    screen = screens[selectedScreenIndex];
+                }
+
+                int width = screen.Bounds.Width;
+                int height = screen.Bounds.Height;
+                int screenX = screen.Bounds.X;
+                int screenY = screen.Bounds.Y;
+                
+                double scale = 1.0;
+                if (width > 1280) {
+                    scale = 1280.0 / width;
+                }
+                int destWidth = (int)(width * scale);
+                int destHeight = (int)(height * scale);
+
                 using (Bitmap bmp = new Bitmap(width, height))
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
@@ -278,7 +265,7 @@ class InputSimulator
                                 header[12] = (byte)(bytesCount & 0xFF);
                                 header[13] = (byte)((bytesCount >> 8) & 0xFF);
                                 header[14] = (byte)((bytesCount >> 16) & 0xFF);
-                                header[15] = (byte)((bytesCount >> 24) & 0xFF);
+                                	header[15] = (byte)((bytesCount >> 24) & 0xFF);
 
                                 lock (tcpStream)
                                 {
@@ -392,7 +379,6 @@ class InputSimulator
                                         int index = int.Parse(indexMatch.Groups[1].Value);
                                         LogToAgent("[Simulator] Mudando para tela indice: " + index);
                                         selectedScreenIndex = index;
-                                        StartCapture();
                                     }
                                 }
                             }
