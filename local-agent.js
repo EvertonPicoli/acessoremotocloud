@@ -329,11 +329,11 @@ function updateScreenDimensions() {
       if (parts.length >= 5) {
         return {
           index: idx,
-          x: parseInt(parts[0]) || 0,
-          y: parseInt(parts[1]) || 0,
-          width: parseInt(parts[2]) || 1920,
-          height: parseInt(parts[3]) || 1080,
-          primary: parts[4].toLowerCase() === 'true'
+          x: parseInt(parts[0].trim()) || 0,
+          y: parseInt(parts[1].trim()) || 0,
+          width: parseInt(parts[2].trim()) || 1920,
+          height: parseInt(parts[3].trim()) || 1080,
+          primary: parts[4].trim().toLowerCase() === 'true'
         };
       }
       return null;

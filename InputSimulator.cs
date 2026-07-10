@@ -90,10 +90,10 @@ class InputSimulator
     const uint KEYEVENTF_KEYDOWN = 0x0000;
     const uint KEYEVENTF_KEYUP = 0x0002;
 
-    static bool isCapturing = false;
+    static volatile bool isCapturing = false;
     static System.Threading.Thread captureThread;
     static NetworkStream tcpStream = null;
-    static int selectedScreenIndex = 0;
+    static volatile int selectedScreenIndex = 0;
 
     static void LogToAgent(string message)
     {
@@ -171,6 +171,10 @@ class InputSimulator
                 }
                 int destWidth = (int)(width * scale);
                 int destHeight = (int)(height * scale);
+                
+                // Força dimensões a serem pares para evitar crash na codificação YUV do WebRTC
+                if (destWidth % 2 != 0) destWidth--;
+                if (destHeight % 2 != 0) destHeight--;
 
                 using (Bitmap bmp = new Bitmap(width, height))
                 {
