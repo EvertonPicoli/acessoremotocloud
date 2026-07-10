@@ -496,74 +496,72 @@
 
       // Estado do motor de gestos para dispositivos móveis
       let touchStartCoords = null;
-      let touchStartTime = 0;
-      let lastTapTime = 0;
-      let isDoubleTapDrag = false;
       let isTwoFingerTap = false;
-      let touchMoved = false;
-      const TOUCH_MOVE_THRESHOLD = 8; // pixels de tolerância para considerar toque fixo vs movimento
+      let activeLeftClick = false;
 
       // Suporte para Toque / Gestos (Celular e Tablet)
       remoteScreen.addEventListener('touchstart', (e) => {
         const numFingers = e.touches.length;
-        touchMoved = false;
 
         if (numFingers === 1) {
-          const touch = e.touches[0];
-          touchStartCoords = { x: touch.clientX, y: touch.clientY };
-          touchStartTime = Date.now();
           isTwoFingerTap = false;
+          const touch = e.touches[0];
+          const coords = getScaledCoords(touch.clientX, touch.clientY);
+          touchStartCoords = coords;
 
-          const now = Date.now();
-          const timeSinceLastTap = now - lastTapTime;
-
-          if (timeSinceLastTap < 300) {
-            // Possível double-tap e segurar para arrastar/selecionar
-            isDoubleTapDrag = true;
-            const coords = getScaledCoords(touch.clientX, touch.clientY);
-            if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-              // Posiciona o mouse
-              controlWs.send(JSON.stringify({
-                type: 'input',
-                action: { type: 'mousemove', x: coords.x, y: coords.y }
-              }));
-              // Clica e segura
-              controlWs.send(JSON.stringify({
-                type: 'input',
-                action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
-              }));
-            }
-          } else {
-            isDoubleTapDrag = false;
+          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+            // Move e clica com o botão esquerdo imediatamente para controle direto do mouse
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousemove', x: coords.x, y: coords.y }
+            }));
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
+            }));
+            activeLeftClick = true;
           }
         } else if (numFingers === 2) {
-          // Clique com dois dedos (botão direito)
           isTwoFingerTap = true;
-          isDoubleTapDrag = false;
+          
+          // Se o botão esquerdo estava pressionado pelo primeiro dedo, solta-o para evitar arraste confuso
+          if (activeLeftClick && controlWs && controlWs.readyState === WebSocket.OPEN) {
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mouseup', button: 0 }
+            }));
+            activeLeftClick = false;
+          }
+
           const touch1 = e.touches[0];
           const touch2 = e.touches[1];
-          // Pega o ponto médio
-          touchStartCoords = {
-            x: (touch1.clientX + touch2.clientX) / 2,
-            y: (touch1.clientY + touch2.clientY) / 2
-          };
-          touchStartTime = Date.now();
+          const midX = (touch1.clientX + touch2.clientX) / 2;
+          const midY = (touch1.clientY + touch2.clientY) / 2;
+          const coords = getScaledCoords(midX, midY);
+
+          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+            // Executa o clique do botão direito imediatamente no ponto médio
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousemove', x: coords.x, y: coords.y }
+            }));
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mousedown', button: 2, x: coords.x, y: coords.y }
+            }));
+            controlWs.send(JSON.stringify({
+              type: 'input',
+              action: { type: 'mouseup', button: 2, x: coords.x, y: coords.y }
+            }));
+          }
         }
 
         e.preventDefault();
       }, { passive: false });
 
       remoteScreen.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
+        if (e.touches.length === 1 && !isTwoFingerTap && activeLeftClick) {
           const touch = e.touches[0];
-          
-          if (touchStartCoords) {
-            const dist = Math.hypot(touch.clientX - touchStartCoords.x, touch.clientY - touchStartCoords.y);
-            if (dist > TOUCH_MOVE_THRESHOLD) {
-              touchMoved = true;
-            }
-          }
-
           const coords = getScaledCoords(touch.clientX, touch.clientY);
           if (coords) {
             throttledMouseMove(coords);
@@ -573,63 +571,15 @@
       }, { passive: false });
 
       remoteScreen.addEventListener('touchend', (e) => {
-        const touchDuration = Date.now() - touchStartTime;
-
-        if (isDoubleTapDrag) {
-          // Solta o clique do arraste
+        if (activeLeftClick) {
           if (controlWs && controlWs.readyState === WebSocket.OPEN) {
             controlWs.send(JSON.stringify({
               type: 'input',
               action: { type: 'mouseup', button: 0 }
             }));
           }
-          isDoubleTapDrag = false;
-          lastTapTime = 0; // Reseta para evitar triplo tap
-        } else if (!touchMoved && touchDuration < 300) {
-          // Foi um toque rápido (tap)
-          if (touchStartCoords) {
-            const coords = getScaledCoords(touchStartCoords.x, touchStartCoords.y);
-            if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-              if (isTwoFingerTap) {
-                // Clique com 2 dedos = botão direito (button 2)
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mousemove', x: coords.x, y: coords.y }
-                }));
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mousedown', button: 2, x: coords.x, y: coords.y }
-                }));
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mouseup', button: 2, x: coords.x, y: coords.y }
-                }));
-              } else {
-                // Clique simples = botão esquerdo (button 0)
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mousemove', x: coords.x, y: coords.y }
-                }));
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
-                }));
-                controlWs.send(JSON.stringify({
-                  type: 'input',
-                  action: { type: 'mouseup', button: 0, x: coords.x, y: coords.y }
-                }));
-                
-                // Registra o tempo do último tap para detectar double-tap na próxima
-                lastTapTime = Date.now();
-              }
-            }
-          }
-        } else {
-          // Se moveu sem estar clicado, apenas reseta
-          lastTapTime = 0;
+          activeLeftClick = false;
         }
-
-        touchStartCoords = null;
         e.preventDefault();
       }, { passive: false });
 
