@@ -438,6 +438,17 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         rgbaBuffer.byteLength
       );
 
+      console.log('DEBUG WEBRTC FRAME:', {
+        width,
+        height,
+        rgbaBuffer_length: rgbaBuffer.length,
+        rgbaBuffer_byteLength: rgbaBuffer.byteLength,
+        rgbaBuffer_byteOffset: rgbaBuffer.byteOffset,
+        rgbaData_length: rgbaData.length,
+        rgbaData_byteLength: rgbaData.byteLength,
+        expected_size: width * height * 4
+      });
+
       const rgbaFrame = {
         width: width,
         height: height,
