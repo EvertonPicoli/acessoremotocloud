@@ -431,23 +431,9 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         };
       }
 
-      // Compartilha a memória do buffer Node.js diretamente como uma visualização de Uint8ClampedArray
-      const rgbaData = new Uint8ClampedArray(
-        rgbaBuffer.buffer,
-        rgbaBuffer.byteOffset,
-        rgbaBuffer.byteLength
-      );
-
-      console.log('DEBUG WEBRTC FRAME:', {
-        width,
-        height,
-        rgbaBuffer_length: rgbaBuffer.length,
-        rgbaBuffer_byteLength: rgbaBuffer.byteLength,
-        rgbaBuffer_byteOffset: rgbaBuffer.byteOffset,
-        rgbaData_length: rgbaData.length,
-        rgbaData_byteLength: rgbaData.byteLength,
-        expected_size: width * height * 4
-      });
+      // Cria uma cópia com ArrayBuffer exclusivo do tamanho exato da imagem
+      // Isso evita expor o buffer compartilhado do pool do Node (que continha o offset do cabeçalho)
+      const rgbaData = new Uint8ClampedArray(rgbaBuffer);
 
       const rgbaFrame = {
         width: width,
