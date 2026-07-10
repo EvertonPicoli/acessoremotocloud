@@ -299,10 +299,19 @@
           const imgStart = raw.indexOf('"image":"') + 9;
           const imgEnd = raw.lastIndexOf('"');
           if (imgStart > 9 && imgEnd > imgStart) {
-            // Throttle: só atualizar se o frame anterior já foi renderizado
+            // Throttle: só atualizar se o frame anterior já foi processado/pintado
             if (!remoteScreen._pendingFrame) {
               remoteScreen._pendingFrame = true;
               remoteScreen.src = 'data:image/jpeg;base64,' + raw.substring(imgStart, imgEnd);
+              
+              // Garante que o ACK seja disparado na próxima renderização do navegador,
+              // independente de o browser otimizar e pular o evento 'load' da imagem (caso seja o mesmo frame)
+              requestAnimationFrame(() => {
+                remoteScreen._pendingFrame = false;
+                if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                  controlWs.send(JSON.stringify({ type: 'frame_ack' }));
+                }
+              });
             }
           }
           return;
@@ -325,20 +334,8 @@
             remoteScreen.style.display = 'block';
             toolbar.style.display = 'flex';
 
-            // Configura os manipuladores do frame de tela apenas uma vez ao iniciar a sessão
+            // Inicializa flag de frame pendente
             remoteScreen._pendingFrame = false;
-            remoteScreen.onload = () => {
-              remoteScreen._pendingFrame = false;
-              if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-                controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-              }
-            };
-            remoteScreen.onerror = () => {
-              remoteScreen._pendingFrame = false;
-              if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-                controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-              }
-            };
 
             startPing();
             setupInputHandlers();
@@ -585,8 +582,6 @@
       lastMouseMoveTime = 0;
       pendingMoveCoords = null;
 
-      remoteScreen.onload = null;
-      remoteScreen.onerror = null;
       remoteScreen._pendingFrame = false;
       remoteScreen.src = '';
       remoteScreen.style.display = 'none';
