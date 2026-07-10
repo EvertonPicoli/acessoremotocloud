@@ -326,6 +326,15 @@ updateScreenDimensions();
 
 const inputQueue = [];
 let isProcessingInput = false;
+let processorImmediate = null;
+
+function scheduleInputProcessor() {
+  if (processorImmediate) return;
+  processorImmediate = setImmediate(() => {
+    processorImmediate = null;
+    processInputQueue();
+  });
+}
 
 function processInputQueue() {
   if (isProcessingInput || inputQueue.length === 0) return;
@@ -416,7 +425,7 @@ function connectFrameSocket() {
 
         if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
           // Controle de backpressure: se o buffer do WebSocket estiver cheio, pular este frame
-          if (wsClient.bufferedAmount < 128 * 1024) {
+          if (wsClient.bufferedAmount < 64 * 1024) {
             const payload = JSON.stringify({ type: 'frame', image: base64 });
             wsClient.send(payload);
           }
@@ -529,7 +538,7 @@ function connectToCentralServer() {
           } else {
             inputQueue.push(action);
           }
-          processInputQueue();
+          scheduleInputProcessor();
         }
       }
     } catch (err) {
