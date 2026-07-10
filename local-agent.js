@@ -416,7 +416,7 @@ function connectFrameSocket() {
 
         if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
           // Controle de backpressure: se o buffer do WebSocket estiver cheio, pular este frame
-          if (wsClient.bufferedAmount < 1024 * 1024) {
+          if (wsClient.bufferedAmount < 128 * 1024) {
             const payload = JSON.stringify({ type: 'frame', image: base64 });
             wsClient.send(payload);
           }

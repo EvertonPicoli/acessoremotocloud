@@ -165,6 +165,12 @@
     let selectedAgentId = null;
     let selectedAgentName = '';
     let inputHandlersAttached = false;
+    
+    // Variáveis de controle de throttling para reduzir a latência de input
+    let mouseThrottleTimeout = null;
+    let lastMouseMoveTime = 0;
+    const THROTTLE_MS = 40; // ~25 transmissões por segundo
+    let pendingMoveCoords = null;
 
     function log(message, type = 'info') {
       const entry = document.createElement('div');
@@ -390,19 +396,48 @@
       if (inputHandlersAttached) return;
       inputHandlersAttached = true;
 
-      remoteScreen.addEventListener('mousemove', (e) => {
+      function sendMouseMove(coords) {
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-          const coords = getScaledCoords(e.clientX, e.clientY);
-          if (coords) {
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: {
-                type: 'mousemove',
-                x: coords.x,
-                y: coords.y
-              }
-            }));
+          controlWs.send(JSON.stringify({
+            type: 'input',
+            action: {
+              type: 'mousemove',
+              x: coords.x,
+              y: coords.y
+            }
+          }));
+        }
+      }
+
+      function throttledMouseMove(coords) {
+        const now = Date.now();
+        pendingMoveCoords = coords;
+
+        if (now - lastMouseMoveTime >= THROTTLE_MS) {
+          if (mouseThrottleTimeout) {
+            clearTimeout(mouseThrottleTimeout);
+            mouseThrottleTimeout = null;
           }
+          sendMouseMove(coords);
+          lastMouseMoveTime = now;
+        } else {
+          if (!mouseThrottleTimeout) {
+            mouseThrottleTimeout = setTimeout(() => {
+              if (pendingMoveCoords) {
+                sendMouseMove(pendingMoveCoords);
+                lastMouseMoveTime = Date.now();
+                pendingMoveCoords = null;
+              }
+              mouseThrottleTimeout = null;
+            }, THROTTLE_MS - (now - lastMouseMoveTime));
+          }
+        }
+      }
+
+      remoteScreen.addEventListener('mousemove', (e) => {
+        const coords = getScaledCoords(e.clientX, e.clientY);
+        if (coords) {
+          throttledMouseMove(coords);
         }
       });
 
@@ -467,11 +502,8 @@
           const touch = e.touches[0];
           const coords = getScaledCoords(touch.clientX, touch.clientY);
 
-          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousemove', x: coords.x, y: coords.y }
-            }));
+          if (coords) {
+            throttledMouseMove(coords);
           }
         }
         e.preventDefault();
@@ -532,6 +564,14 @@
         controlWs.close();
         controlWs = null;
       }
+
+      // Limpa os timeouts e estados de throttling do mouse/touch
+      if (mouseThrottleTimeout) {
+        clearTimeout(mouseThrottleTimeout);
+        mouseThrottleTimeout = null;
+      }
+      lastMouseMoveTime = 0;
+      pendingMoveCoords = null;
 
       remoteScreen.src = '';
       remoteScreen.style.display = 'none';
