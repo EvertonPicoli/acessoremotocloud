@@ -222,17 +222,10 @@
             break;
 
           case 'frame':
-            // Recebe o screenshot em base64 e atualiza usando requestAnimationFrame para controle de backpressure
-            if (!remoteScreen._pendingFrame) {
-              remoteScreen._pendingFrame = true;
-              remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
-              
-              requestAnimationFrame(() => {
-                remoteScreen._pendingFrame = false;
-                if (ws && ws.readyState === WebSocket.OPEN) {
-                  ws.send(JSON.stringify({ type: 'frame_ack' }));
-                }
-              });
+            // Recebe o screenshot em base64 e atualiza enviando confirmação (ACK) imediata para solicitar o próximo
+            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
+            if (ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'frame_ack' }));
             }
             break;
 

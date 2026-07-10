@@ -138,8 +138,8 @@ class InputSimulator
         int height = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
         
         double scale = 1.0;
-        if (width > 1920) {
-            scale = 1920.0 / width;
+        if (width > 1280) {
+            scale = 1280.0 / width;
         }
         int destWidth = (int)(width * scale);
         int destHeight = (int)(height * scale);
@@ -147,7 +147,7 @@ class InputSimulator
         ImageCodecInfo jpgEncoder = GetEncoder(ImageFormat.Jpeg);
         Encoder myEncoder = Encoder.Quality;
         EncoderParameters myEncoderParameters = new EncoderParameters(1);
-        EncoderParameter myEncoderParameter = new EncoderParameter(myEncoder, 45L); 
+        EncoderParameter myEncoderParameter = new EncoderParameter(myEncoder, 35L); 
         myEncoderParameters.Param[0] = myEncoderParameter;
 
         while (isCapturing)
@@ -185,9 +185,9 @@ class InputSimulator
                     {
                         using (Graphics gScaled = Graphics.FromImage(scaledBmp))
                         {
-                            gScaled.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                            gScaled.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-                            gScaled.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                            gScaled.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+                            gScaled.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.None;
+                            gScaled.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.None;
                             gScaled.DrawImage(bmp, 0, 0, destWidth, destHeight);
                         }
 
