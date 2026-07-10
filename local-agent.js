@@ -94,7 +94,7 @@ if (isPackaged) {
     process.exit(1);
   }
 } else {
-  EXE_FILE = path.join(__dirname, 'InputSimulator_v6.exe');
+  EXE_FILE = path.join(__dirname, 'InputSimulator.exe');
 }
 
 // 1. Compilar o simulador C# se o .exe não existir (Apenas modo desenvolvimento)

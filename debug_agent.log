@@ -1,0 +1,17 @@
+[2026-07-10T17:59:37.997Z] === Agente Iniciado ===
+[2026-07-10T18:00:26.986Z] Recebido select-screen para monitor: 1. Total de telas disponíveis: 4
+[2026-07-10T18:00:26.987Z] Enviando select_screen para o simulador C# no índice: 1
+[2026-07-10T18:00:41.934Z] Recebido select-screen para monitor: 2. Total de telas disponíveis: 4
+[2026-07-10T18:00:41.935Z] Enviando select_screen para o simulador C# no índice: 2
+[2026-07-10T18:00:44.192Z] Recebido select-screen para monitor: 3. Total de telas disponíveis: 4
+[2026-07-10T18:00:44.193Z] Enviando select_screen para o simulador C# no índice: 3
+[2026-07-10T18:00:45.819Z] Recebido select-screen para monitor: 0. Total de telas disponíveis: 4
+[2026-07-10T18:00:45.820Z] Enviando select_screen para o simulador C# no índice: 0
+[2026-07-10T18:00:54.521Z] Recebido select-screen para monitor: 1. Total de telas disponíveis: 4
+[2026-07-10T18:00:54.522Z] Enviando select_screen para o simulador C# no índice: 1
+[2026-07-10T18:01:04.571Z] Recebido select-screen para monitor: 2. Total de telas disponíveis: 4
+[2026-07-10T18:01:04.571Z] Enviando select_screen para o simulador C# no índice: 2
+[2026-07-10T18:01:07.640Z] Recebido select-screen para monitor: 3. Total de telas disponíveis: 4
+[2026-07-10T18:01:07.641Z] Enviando select_screen para o simulador C# no índice: 3
+[2026-07-10T18:01:09.597Z] Recebido select-screen para monitor: 0. Total de telas disponíveis: 4
+[2026-07-10T18:01:09.597Z] Enviando select_screen para o simulador C# no índice: 0
