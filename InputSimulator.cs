@@ -18,6 +18,19 @@ class InputSimulator
     [DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
+    [DllImport("shcore.dll")]
+    private static extern int SetProcessDpiAwareness(int value);
+
+    static void LogToFile(string message)
+    {
+        try
+        {
+            string path = @"c:\Users\Innova\Documents\GitHub\acessoremotocloud\debug_simulator.log";
+            System.IO.File.AppendAllText(path, string.Format("[{0}] {1}\r\n", DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"), message));
+        }
+        catch {}
+    }
+
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
 
@@ -148,6 +161,8 @@ class InputSimulator
     static void CaptureLoop()
     {
         LogToAgent("[Simulator] CaptureLoop() thread iniciada.");
+        LogToFile("CaptureLoop thread iniciada.");
+        int lastLoggedIndex = -1;
         
         while (isCapturing)
         {
@@ -158,6 +173,12 @@ class InputSimulator
                 if (selectedScreenIndex >= 0 && selectedScreenIndex < screens.Length)
                 {
                     screen = screens[selectedScreenIndex];
+                }
+
+                if (selectedScreenIndex != lastLoggedIndex)
+                {
+                    LogToFile(string.Format("CaptureLoop monitor mudou para index: {0}. Total: {1}. Bounds: {2}", selectedScreenIndex, screens.Length, screen.Bounds));
+                    lastLoggedIndex = selectedScreenIndex;
                 }
 
                 int width = screen.Bounds.Width;
@@ -306,7 +327,9 @@ class InputSimulator
 
     static void Main()
     {
+        LogToFile("=== InputSimulator.exe Iniciado ===");
         DisableQuickEdit();
+        try { SetProcessDpiAwareness(2); } catch {}
         try { SetProcessDPIAware(); } catch {}
         try
         {
@@ -365,6 +388,7 @@ class InputSimulator
                                 Match typeMatch = typeRegex.Match(line);
                                 if (!typeMatch.Success) continue;
                                 string type = typeMatch.Groups[1].Value;
+                                LogToFile("Recebido comando de frames: " + line);
 
                                 if (type == "start_capture")
                                 {

@@ -14,6 +14,14 @@ if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+function logToFile(msg) {
+  try {
+    fs.appendFileSync('c:\\Users\\Innova\\Documents\\GitHub\\acessoremotocloud\\debug_agent.log', `[${new Date().toISOString()}] ${msg}\n`);
+  } catch {}
+}
+
+logToFile("=== Agente Iniciado ===");
+
 // Oculta a janela do console caso esteja empacotado (produção)
 if (isPackaged) {
   const hideConsoleCommand = `powershell -NoProfile -Command "
@@ -703,10 +711,14 @@ function connectToCentralServer() {
 
         else if (data.type === 'select-screen') {
           const index = parseInt(data.index);
+          logToFile(`Recebido select-screen para monitor: ${index}. Total de telas disponíveis: ${screens.length}`);
           if (index >= 0 && index < screens.length) {
             selectedScreenIndex = index;
             console.log(`[Agente] Solicitando ao simulador mudança para o Monitor ${index}`);
+            logToFile(`Enviando select_screen para o simulador C# no índice: ${index}`);
             sendFrameControlToSimulator({ type: 'select_screen', index: index });
+          } else {
+            logToFile(`Índice ${index} inválido ou fora dos limites do screens array`);
           }
         }
 
