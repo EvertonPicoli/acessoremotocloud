@@ -95,6 +95,7 @@ app.get('/api/agents', (req, res) => {
     list.push({
       id: id,
       name: agent.name,
+      mac: agent.mac || 'DESCONHECIDO',
       status: agent.ws.readyState === WebSocket.OPEN ? 'online' : 'offline',
       isStreaming: agent.isStreaming || false
     });
@@ -102,6 +103,7 @@ app.get('/api/agents', (req, res) => {
   res.json(list);
 });
 
+// @ts-ignore
 // Atualiza todos os dashboards conectados sobre a lista de agentes
 function broadcastAgentList() {
   const list = [];
@@ -109,6 +111,7 @@ function broadcastAgentList() {
     list.push({
       id: id,
       name: agent.name,
+      mac: agent.mac || 'DESCONHECIDO',
       status: 'online',
       isStreaming: agent.isStreaming || false
     });
@@ -155,13 +158,14 @@ wss.on('connection', (ws, request) => {
   if (role === 'agent') {
     const id = parsedUrl.query.id;
     const name = parsedUrl.query.name || 'Computador Remoto';
+    const mac = parsedUrl.query.mac || 'DESCONHECIDO';
 
     if (!id) {
       ws.close(4000, 'ID do agente é obrigatório');
       return;
     }
 
-    console.log(`[Servidor] Agente conectado: ${name} (ID: ${id})`);
+    console.log(`[Servidor] Agente conectado: ${name} (ID: ${id}) (MAC: ${mac})`);
     
     // Se já houver um agente com esse ID, encerra a conexão antiga
     if (agents.has(id)) {
@@ -169,7 +173,7 @@ wss.on('connection', (ws, request) => {
       old.ws.close();
     }
 
-    agents.set(id, { ws, name, id, isStreaming: false });
+    agents.set(id, { ws, name, id, mac, isStreaming: false });
     broadcastAgentList();
 
     ws.on('message', (message, isBinary) => {

@@ -77,6 +77,9 @@
               <option value="fill" style="background: #111119;">Esticar</option>
             </select>
           </div>
+          <select id="monitor-select" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; height: auto; background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.3); color: #34d399; display: none;">
+            <!-- Opções de monitor serão injetadas dinamicamente -->
+          </select>
           <button id="touch-settings-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #60a5fa;">
             👆 Entrada por Toque
           </button>
@@ -193,14 +196,16 @@
     const emptyState = document.getElementById('empty-state');
     const refreshBtn = document.getElementById('refresh-btn');
 
-     // Elementos do Modal de Configuração de Toque
-     const touchSettingsModal = document.getElementById('touch-settings-modal');
-     const touchSettingsBtn = document.getElementById('touch-settings-btn');
-     const closeTouchSettingsBtn = document.getElementById('close-touch-settings-btn');
-     const saveTouchSettingsBtn = document.getElementById('save-touch-settings-btn');
+    // Elementos do Toolbar
+    const monitorSelect = document.getElementById('monitor-select');
 
-     // Elementos do Modal de PIN
-     const pinModal = document.getElementById('pin-modal');
+    // Elementos do Modal de Configuração de Toque
+    const touchSettingsModal = document.getElementById('touch-settings-modal');
+    const touchSettingsBtn = document.getElementById('touch-settings-btn');
+    const closeTouchSettingsBtn = document.getElementById('close-touch-settings-btn');
+    const saveTouchSettingsBtn = document.getElementById('save-touch-settings-btn');
+
+    const pinModal = document.getElementById('pin-modal');
     const pinModalTitle = document.getElementById('pin-modal-title');
     const pinInput = document.getElementById('pin-input');
     const connectBtn = document.getElementById('connect-btn');
@@ -273,7 +278,8 @@
           <div class="computer-icon">💻</div>
           <div class="computer-name">${agent.name}</div>
           <div class="agent-meta">ID: ${agent.id.substring(0, 8)}...</div>
-          <div class="computer-status">
+          <div class="agent-meta" style="margin-top: 0.1rem; color: #818cf8; font-weight: 500; font-family: monospace;">MAC: ${agent.mac}</div>
+          <div class="computer-status" style="margin-top: 0.5rem;">
             <span class="pulse-dot"></span>
             ${agent.isStreaming ? 'Em Sessão' : 'Disponível'}
           </div>
@@ -361,6 +367,13 @@
             placeholder.style.display = 'none';
             remoteScreen.style.display = 'block';
             toolbar.style.display = 'flex';
+
+            // Configura seletor de telas caso existam múltiplos monitores
+            if (data.screens && data.screens.length > 1) {
+              setupMonitorDropdown(data.screens, data.selectedScreenIndex);
+            } else {
+              removeMonitorDropdown();
+            }
 
             startPing();
             setupInputHandlers();
@@ -977,6 +990,7 @@
       placeholder.style.display = 'flex';
       toolbar.style.display = 'none';
       sessionView.style.display = 'none';
+      removeMonitorDropdown();
       
       dashboardView.style.display = 'block';
       statusText.textContent = 'Monitorando Nuvem';
@@ -1084,6 +1098,39 @@
           }
         }
         touchSettingsModal.style.display = 'none';
+      });
+    }
+
+    function setupMonitorDropdown(screensList, selectedIdx) {
+      if (!monitorSelect) return;
+      monitorSelect.innerHTML = '';
+      screensList.forEach((screen, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.textContent = `Monitor ${idx + 1} (${screen.width}x${screen.height})${screen.primary ? ' *' : ''}`;
+        opt.style.background = '#111119';
+        if (idx === selectedIdx) opt.selected = true;
+        monitorSelect.appendChild(opt);
+      });
+      monitorSelect.style.display = 'inline-block';
+    }
+
+    function removeMonitorDropdown() {
+      if (monitorSelect) {
+        monitorSelect.style.display = 'none';
+      }
+    }
+
+    if (monitorSelect) {
+      monitorSelect.addEventListener('change', () => {
+        const selectedIdx = parseInt(monitorSelect.value);
+        log(`Alterando para o Monitor ${selectedIdx + 1}...`, 'info');
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({
+            type: 'select-screen',
+            index: selectedIdx
+          }));
+        }
       });
     }
 

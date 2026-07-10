@@ -93,6 +93,7 @@ class InputSimulator
     static bool isCapturing = false;
     static System.Threading.Thread captureThread;
     static NetworkStream tcpStream = null;
+    static int selectedScreenIndex = 0;
 
     static void LogToAgent(string message)
     {
@@ -154,8 +155,18 @@ class InputSimulator
     static void CaptureLoop()
     {
         LogToAgent("[Simulator] CaptureLoop() thread iniciada.");
-        int width = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Width;
-        int height = System.Windows.Forms.Screen.PrimaryScreen.Bounds.Height;
+        
+        var screens = System.Windows.Forms.Screen.AllScreens;
+        System.Windows.Forms.Screen screen = System.Windows.Forms.Screen.PrimaryScreen;
+        if (selectedScreenIndex >= 0 && selectedScreenIndex < screens.Length)
+        {
+            screen = screens[selectedScreenIndex];
+        }
+
+        int width = screen.Bounds.Width;
+        int height = screen.Bounds.Height;
+        int screenX = screen.Bounds.X;
+        int screenY = screen.Bounds.Y;
         
         double scale = 1.0;
         if (width > 1280) {
@@ -178,10 +189,10 @@ class InputSimulator
                 {
                     using (Graphics g = Graphics.FromImage(bmp))
                     {
-                        // Copia a tela usando o offset absoluto do monitor para evitar erros de multimonitor
+                        // Copia a tela usando o offset absoluto do monitor selecionado
                         g.CopyFromScreen(
-                            System.Windows.Forms.Screen.PrimaryScreen.Bounds.X, 
-                            System.Windows.Forms.Screen.PrimaryScreen.Bounds.Y, 
+                            screenX, 
+                            screenY, 
                             0, 0, 
                             bmp.Size
                         );
@@ -193,10 +204,13 @@ class InputSimulator
                             if (pci.flags == CURSOR_SHOWING)
                             {
                                 // Compensar posição do cursor com a origem real da tela
-                                int cursorX = pci.ptScreenPos.x - System.Windows.Forms.Screen.PrimaryScreen.Bounds.X;
-                                int cursorY = pci.ptScreenPos.y - System.Windows.Forms.Screen.PrimaryScreen.Bounds.Y;
-                                DrawIcon(g.GetHdc(), cursorX, cursorY, pci.hCursor);
-                                g.ReleaseHdc();
+                                int cursorX = pci.ptScreenPos.x - screenX;
+                                int cursorY = pci.ptScreenPos.y - screenY;
+                                if (cursorX >= 0 && cursorX < width && cursorY >= 0 && cursorY < height)
+                                {
+                                    DrawIcon(g.GetHdc(), cursorX, cursorY, pci.hCursor);
+                                    g.ReleaseHdc();
+                                }
                             }
                         }
                     }
@@ -368,6 +382,18 @@ class InputSimulator
                                 else if (type == "stop_capture")
                                 {
                                     StopCapture();
+                                }
+                                else if (type == "select_screen")
+                                {
+                                    Regex indexRegex = new Regex("\"index\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
+                                    Match indexMatch = indexRegex.Match(line);
+                                    if (indexMatch.Success)
+                                    {
+                                        int index = int.Parse(indexMatch.Groups[1].Value);
+                                        LogToAgent("[Simulator] Mudando para tela indice: " + index);
+                                        selectedScreenIndex = index;
+                                        StartCapture();
+                                    }
                                 }
                             }
                             catch {}

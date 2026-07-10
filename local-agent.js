@@ -305,20 +305,47 @@ exec(cmdLine, (err) => {
   if (err) console.error('Erro ao iniciar InputSimulator.exe:', err.message);
 });
 
-let cachedWidth = 2560;
-let cachedHeight = 1080;
+function getMacAddress() {
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const netInterface of interfaces[name]) {
+      if (!netInterface.internal && netInterface.mac && netInterface.mac !== '00:00:00:00:00:00') {
+        return netInterface.mac.toUpperCase();
+      }
+    }
+  }
+  return 'DESCONHECIDO';
+}
+
+let screens = [];
+let selectedScreenIndex = 0;
 
 function updateScreenDimensions() {
   try {
-    const output = execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; $s = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds; Write-Output ($s.Width.ToString() + \\" \\" + $s.Height.ToString())"', { encoding: 'utf8' });
-    const parts = output.trim().split(' ');
-    if (parts.length >= 2) {
-      cachedWidth = parseInt(parts[0]) || 2560;
-      cachedHeight = parseInt(parts[1]) || 1080;
-      console.log(`[Agente] Resolução da tela principal: ${cachedWidth}x${cachedHeight}`);
-    }
+    const output = execSync('powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { \\"$($_.Bounds.X),$($_.Bounds.Y),$($_.Bounds.Width),$($_.Bounds.Height),$($_.Primary)\\" }"', { encoding: 'utf8' });
+    const lines = output.trim().split(/\r?\n/);
+    screens = lines.map((line, idx) => {
+      const parts = line.split(',');
+      if (parts.length >= 5) {
+        return {
+          index: idx,
+          x: parseInt(parts[0]) || 0,
+          y: parseInt(parts[1]) || 0,
+          width: parseInt(parts[2]) || 1920,
+          height: parseInt(parts[3]) || 1080,
+          primary: parts[4].toLowerCase() === 'true'
+        };
+      }
+      return null;
+    }).filter(Boolean);
+    
+    const primaryIdx = screens.findIndex(s => s.primary);
+    selectedScreenIndex = primaryIdx >= 0 ? primaryIdx : 0;
+    console.log('[Agente] Monitores detectados:', JSON.stringify(screens));
   } catch (err) {
     console.error('Erro ao ler dimensões da tela:', err.message);
+    screens = [{ index: 0, x: 0, y: 0, width: 2560, height: 1080, primary: true }];
+    selectedScreenIndex = 0;
   }
 }
 
@@ -343,16 +370,22 @@ function processInputQueue() {
   while (inputQueue.length > 0) {
     const action = inputQueue.shift();
     try {
+      const screen = screens[selectedScreenIndex] || screens[0] || { x: 0, y: 0, width: 2560, height: 1080 };
+      
       if (action.type === 'mousemove') {
-        const px = Math.round(action.x * cachedWidth);
-        const py = Math.round(action.y * cachedHeight);
-        sendToSimulator({ type: 'mousemove', x: px, y: py });
+        const localX = Math.round(action.x * screen.width);
+        const localY = Math.round(action.y * screen.height);
+        const absoluteX = screen.x + localX;
+        const absoluteY = screen.y + localY;
+        sendToSimulator({ type: 'mousemove', x: absoluteX, y: absoluteY });
       } 
       else if (action.type === 'mousedown') {
         if (action.x !== undefined && action.y !== undefined) {
-          const px = Math.round(action.x * cachedWidth);
-          const py = Math.round(action.y * cachedHeight);
-          sendToSimulator({ type: 'mousemove', x: px, y: py });
+          const localX = Math.round(action.x * screen.width);
+          const localY = Math.round(action.y * screen.height);
+          const absoluteX = screen.x + localX;
+          const absoluteY = screen.y + localY;
+          sendToSimulator({ type: 'mousemove', x: absoluteX, y: absoluteY });
         }
         
         console.log(`[Agente] Clique - Pressionar botão (via C# Simulator): ${action.button}`);
@@ -360,9 +393,11 @@ function processInputQueue() {
       } 
       else if (action.type === 'mouseup') {
         if (action.x !== undefined && action.y !== undefined) {
-          const px = Math.round(action.x * cachedWidth);
-          const py = Math.round(action.y * cachedHeight);
-          sendToSimulator({ type: 'mousemove', x: px, y: py });
+          const localX = Math.round(action.x * screen.width);
+          const localY = Math.round(action.y * screen.height);
+          const absoluteX = screen.x + localX;
+          const absoluteY = screen.y + localY;
+          sendToSimulator({ type: 'mousemove', x: absoluteX, y: absoluteY });
         }
         
         console.log(`[Agente] Clique - Soltar botão (via C# Simulator): ${action.button}`);
@@ -565,7 +600,7 @@ function sendFrameControlToSimulator(payload) {
 function connectToCentralServer() {
   console.log('Conectando ao servidor central...');
   
-  const connectionUrl = `${config.centralServer}?role=agent&id=${config.id}&name=${encodeURIComponent(config.computerName)}`;
+  const connectionUrl = `${config.centralServer}?role=agent&id=${config.id}&name=${encodeURIComponent(config.computerName)}&mac=${encodeURIComponent(getMacAddress())}`;
   wsClient = new WebSocket(connectionUrl, {
     rejectUnauthorized: false
   });
@@ -584,7 +619,9 @@ function connectToCentralServer() {
           wsClient.send(JSON.stringify({ 
             type: 'auth-success', 
             computerName: config.computerName,
-            pin: config.pin 
+            pin: config.pin,
+            screens: screens,
+            selectedScreenIndex: selectedScreenIndex
           }));
           console.log('Cliente remoto autenticado via Nuvem. Iniciando captura de tela...');
           updateScreenDimensions();
@@ -661,6 +698,15 @@ function connectToCentralServer() {
             } catch (err) {
               console.error('Erro ao adicionar ICE candidate recebido:', err);
             }
+          }
+        }
+
+        else if (data.type === 'select-screen') {
+          const index = parseInt(data.index);
+          if (index >= 0 && index < screens.length) {
+            selectedScreenIndex = index;
+            console.log(`[Agente] Solicitando ao simulador mudança para o Monitor ${index}`);
+            sendFrameControlToSimulator({ type: 'select_screen', index: index });
           }
         }
 
