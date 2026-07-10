@@ -303,19 +303,6 @@
             if (!remoteScreen._pendingFrame) {
               remoteScreen._pendingFrame = true;
               remoteScreen.src = 'data:image/jpeg;base64,' + raw.substring(imgStart, imgEnd);
-              // Liberar para o próximo frame após renderizar e enviar confirmação (ACK) para solicitar o próximo
-              remoteScreen.onload = () => { 
-                remoteScreen._pendingFrame = false; 
-                if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-                  controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-                }
-              };
-              remoteScreen.onerror = () => { 
-                remoteScreen._pendingFrame = false; 
-                if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-                  controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-                }
-              };
             }
           }
           return;
@@ -337,6 +324,21 @@
             placeholder.style.display = 'none';
             remoteScreen.style.display = 'block';
             toolbar.style.display = 'flex';
+
+            // Configura os manipuladores do frame de tela apenas uma vez ao iniciar a sessão
+            remoteScreen._pendingFrame = false;
+            remoteScreen.onload = () => {
+              remoteScreen._pendingFrame = false;
+              if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                controlWs.send(JSON.stringify({ type: 'frame_ack' }));
+              }
+            };
+            remoteScreen.onerror = () => {
+              remoteScreen._pendingFrame = false;
+              if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                controlWs.send(JSON.stringify({ type: 'frame_ack' }));
+              }
+            };
 
             startPing();
             setupInputHandlers();
@@ -583,6 +585,9 @@
       lastMouseMoveTime = 0;
       pendingMoveCoords = null;
 
+      remoteScreen.onload = null;
+      remoteScreen.onerror = null;
+      remoteScreen._pendingFrame = false;
       remoteScreen.src = '';
       remoteScreen.style.display = 'none';
       placeholder.style.display = 'flex';
