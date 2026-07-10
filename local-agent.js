@@ -411,6 +411,20 @@ let tcpBuffer = Buffer.alloc(0);
 function closePeerConnection() {
   if (peerConnection) {
     try {
+      peerConnection.onicecandidate = null;
+      peerConnection.onconnectionstatechange = null;
+      peerConnection.onsignalingstatechange = null;
+      peerConnection.oniceconnectionstatechange = null;
+    } catch {}
+    try {
+      const senders = peerConnection.getSenders();
+      for (const sender of senders) {
+        try {
+          peerConnection.removeTrack(sender);
+        } catch {}
+      }
+    } catch {}
+    try {
       peerConnection.close();
     } catch {}
     peerConnection = null;

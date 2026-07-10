@@ -877,6 +877,9 @@
     function closePeerConnection() {
       if (pc) {
         try {
+          pc.onicecandidate = null;
+          pc.ontrack = null;
+          pc.onconnectionstatechange = null;
           pc.close();
         } catch {}
         pc = null;

@@ -228,6 +228,19 @@ wss.on('connection', (ws, request) => {
       }
       ws.send(JSON.stringify({ type: 'agent-list', agents: list }));
 
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message);
+          if (data.type === 'refresh') {
+            const list = [];
+            for (const [id, agent] of agents.entries()) {
+              list.push({ id, name: agent.name, status: 'online', isStreaming: agent.isStreaming });
+            }
+            ws.send(JSON.stringify({ type: 'agent-list', agents: list }));
+          }
+        } catch {}
+      });
+
       ws.on('close', () => {
         clients.delete(ws);
       });
