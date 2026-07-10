@@ -416,16 +416,39 @@ function closePeerConnection() {
   }
 }
 
+let cachedI420Frame = null;
+
 function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
   // Envia frame apenas se houver conexão ativa estabelecida
   if (peerConnection && peerConnection.connectionState === 'connected') {
     try {
-      const i420Data = rgbaToI420(rgbaBuffer, width, height);
-      videoSource.onFrame({
-        width,
-        height,
-        data: i420Data
-      });
+      // Re-aloca ou cria o buffer cacheado se a resolução mudar ou for a primeira execução
+      if (!cachedI420Frame || cachedI420Frame.width !== width || cachedI420Frame.height !== height) {
+        cachedI420Frame = {
+          width: width,
+          height: height,
+          data: new Uint8ClampedArray(1.5 * width * height)
+        };
+      }
+
+      // Compartilha a memória do buffer Node.js diretamente como uma visualização de Uint8ClampedArray
+      const rgbaData = new Uint8ClampedArray(
+        rgbaBuffer.buffer,
+        rgbaBuffer.byteOffset,
+        rgbaBuffer.byteLength
+      );
+
+      const rgbaFrame = {
+        width: width,
+        height: height,
+        data: rgbaData
+      };
+
+      // Realiza a conversão de RGBA para I420 in-place na memória cacheada
+      rgbaToI420(rgbaFrame, cachedI420Frame);
+
+      // Injeta o frame I420 convertido no WebRTC
+      videoSource.onFrame(cachedI420Frame);
     } catch (err) {
       console.error('Erro ao injetar frame no WebRTC:', err.message);
     }
