@@ -77,6 +77,9 @@
               <option value="fill" style="background: #111119;">Esticar</option>
             </select>
           </div>
+          <button id="touch-settings-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #60a5fa;">
+            👆 Entrada por Toque
+          </button>
           <button id="fullscreen-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
             📺 Tela Cheia
           </button>
@@ -129,6 +132,46 @@
     </div>
   </div>
 
+  <!-- Modal de Entrada por Toque -->
+  <div id="touch-settings-modal" class="modal-overlay" style="display: none; align-items: center; justify-content: center; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 10000;">
+    <div class="modal-content" style="max-width: 420px; background: #13131f; border: 1px solid var(--glass-border); padding: 1.5rem; border-radius: 12px; width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+      <div class="modal-header" style="border-bottom: 1px solid var(--glass-border); padding-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 600; color: var(--text-main);">Configure a entrada por toque</h3>
+        <button id="close-touch-settings-btn" class="close-btn" style="background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer;">&times;</button>
+      </div>
+      <div class="modal-body" style="display: flex; flex-direction: column; gap: 1.2rem; padding: 1.25rem 0;">
+        <div style="display: flex; flex-direction: column; gap: 1.2rem;">
+          <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="radio" name="touch-mode" value="trackpad" checked style="margin-top: 0.25rem; accent-color: var(--accent-color);">
+            <div>
+              <strong style="display: block; font-size: 0.95rem; color: var(--text-main); font-weight: 600;">Modo de trackpad</strong>
+              <span style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; display: block; margin-top: 0.2rem;">Use a tela touchscreen como um trackpad e controle com precisão o ponteiro do mouse remoto.</span>
+            </div>
+          </label>
+          
+          <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="radio" name="touch-mode" value="direct" style="margin-top: 0.25rem; accent-color: var(--accent-color);">
+            <div>
+              <strong style="display: block; font-size: 0.95rem; color: var(--text-main); font-weight: 600;">Modo de toque direto</strong>
+              <span style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; display: block; margin-top: 0.2rem;">O ponteiro do mouse segue seu toque. Toque com dois dedos para acionar o botão direito.</span>
+            </div>
+          </label>
+
+          <label style="display: flex; align-items: flex-start; gap: 0.75rem; cursor: pointer;">
+            <input type="radio" name="touch-mode" value="zoom-pan" style="margin-top: 0.25rem; accent-color: var(--accent-color);">
+            <div>
+              <strong style="display: block; font-size: 0.95rem; color: var(--text-main); font-weight: 600;">Modo de toque com zoom e movimento</strong>
+              <span style="font-size: 0.8rem; color: var(--text-muted); line-height: 1.4; display: block; margin-top: 0.2rem;">Use gestos de pinça com dois dedos para zoom, e deslize com dois dedos para mover/navegar pela tela.</span>
+            </div>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-top: 1px solid var(--glass-border); padding-top: 0.75rem; display: flex; justify-content: flex-end;">
+        <button id="save-touch-settings-btn" class="btn" style="width: 100%; padding: 0.6rem; border-radius: 6px;">Salvar Configuração</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const statusDot = document.getElementById('status-dot');
     const statusText = document.getElementById('status-text');
@@ -150,8 +193,14 @@
     const emptyState = document.getElementById('empty-state');
     const refreshBtn = document.getElementById('refresh-btn');
 
-    // Elementos do Modal de PIN
-    const pinModal = document.getElementById('pin-modal');
+     // Elementos do Modal de Configuração de Toque
+     const touchSettingsModal = document.getElementById('touch-settings-modal');
+     const touchSettingsBtn = document.getElementById('touch-settings-btn');
+     const closeTouchSettingsBtn = document.getElementById('close-touch-settings-btn');
+     const saveTouchSettingsBtn = document.getElementById('save-touch-settings-btn');
+
+     // Elementos do Modal de PIN
+     const pinModal = document.getElementById('pin-modal');
     const pinModalTitle = document.getElementById('pin-modal-title');
     const pinInput = document.getElementById('pin-input');
     const connectBtn = document.getElementById('connect-btn');
@@ -159,8 +208,9 @@
     const closePinBtn = document.getElementById('close-pin-btn');
     const pinCancelBtn = document.getElementById('pin-cancel-btn');
 
-    let mainWs = null; // WebSocket principal para monitorar a lista
-    let controlWs = null; // WebSocket secundário para controle de tela ativo
+     let mainWs = null; // WebSocket principal para monitorar a lista
+     let controlWs = null; // WebSocket secundário para controle de tela ativo
+     let touchMode = localStorage.getItem('touch-mode') || 'trackpad'; // trackpad, direct, zoom-pan
     let pc = null; // RTCPeerConnection para WebRTC
     let pingInterval = null;
     let selectedAgentId = null;
@@ -494,93 +544,299 @@
         e.preventDefault();
       });
 
-      // Estado do motor de gestos para dispositivos móveis
+      // Estado unificado do motor de gestos para dispositivos móveis
       let touchStartCoords = null;
+      let touchStartTime = 0;
+      let lastTapTime = 0;
+      let isDoubleTapDrag = false;
       let isTwoFingerTap = false;
+      let touchMoved = false;
+      const TOUCH_MOVE_THRESHOLD = 8; // pixels
+
+      // Lógica específica de Trackpad
+      let virtualMouseX = 0.5;
+      let virtualMouseY = 0.5;
+      let lastTouchX = 0;
+      let lastTouchY = 0;
       let activeLeftClick = false;
 
-      // Suporte para Toque / Gestos (Celular e Tablet)
+      // Lógica de Zoom/Pan
+      let zoomScale = 1;
+      let panX = 0;
+      let panY = 0;
+      let isPinching = false;
+      let pinchStartDistance = 0;
+      let pinchStartScale = 1;
+      let panStartX = 0;
+      let panStartY = 0;
+      let touchStartMidX = 0;
+      let touchStartMidY = 0;
+
+      window.resetZoomPan = function() {
+        zoomScale = 1;
+        panX = 0;
+        panY = 0;
+        updateZoomPanTransform();
+      };
+
+      function updateZoomPanTransform() {
+        remoteScreen.style.transform = `scale(${zoomScale}) translate(${panX}px, ${panY}px)`;
+        remoteScreen.style.transformOrigin = 'center center';
+      }
+
+      // Suporte unificado para Toque / Gestos (Celular e Tablet)
       remoteScreen.addEventListener('touchstart', (e) => {
         const numFingers = e.touches.length;
+        touchMoved = false;
 
-        if (numFingers === 1) {
-          isTwoFingerTap = false;
-          const touch = e.touches[0];
-          const coords = getScaledCoords(touch.clientX, touch.clientY);
-          touchStartCoords = coords;
+        // --- MODO ZOOM-PAN ---
+        if (touchMode === 'zoom-pan') {
+          if (numFingers === 2) {
+            isPinching = true;
+            pinchStartDistance = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+            );
+            pinchStartScale = zoomScale;
 
-          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-            // Move e clica com o botão esquerdo imediatamente para controle direto do mouse
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousemove', x: coords.x, y: coords.y }
-            }));
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
-            }));
-            activeLeftClick = true;
+            touchStartMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            touchStartMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            panStartX = panX;
+            panStartY = panY;
           }
-        } else if (numFingers === 2) {
-          isTwoFingerTap = true;
-          
-          // Se o botão esquerdo estava pressionado pelo primeiro dedo, solta-o para evitar arraste confuso
-          if (activeLeftClick && controlWs && controlWs.readyState === WebSocket.OPEN) {
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mouseup', button: 0 }
-            }));
-            activeLeftClick = false;
-          }
-
-          const touch1 = e.touches[0];
-          const touch2 = e.touches[1];
-          const midX = (touch1.clientX + touch2.clientX) / 2;
-          const midY = (touch1.clientY + touch2.clientY) / 2;
-          const coords = getScaledCoords(midX, midY);
-
-          if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-            // Executa o clique do botão direito imediatamente no ponto médio
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousemove', x: coords.x, y: coords.y }
-            }));
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousedown', button: 2, x: coords.x, y: coords.y }
-            }));
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mouseup', button: 2, x: coords.x, y: coords.y }
-            }));
-          }
+          e.preventDefault();
+          return;
         }
 
-        e.preventDefault();
+        // --- MODO TRACKPAD ---
+        if (touchMode === 'trackpad') {
+          if (numFingers === 1) {
+            isTwoFingerTap = false;
+            const touch = e.touches[0];
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+            touchStartCoords = { x: touch.clientX, y: touch.clientY };
+            touchStartTime = Date.now();
+
+            const now = Date.now();
+            if (now - lastTapTime < 300) {
+              isDoubleTapDrag = true;
+              if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                // Clica e segura na posição virtual corrente
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mousedown', button: 0, x: virtualMouseX, y: virtualMouseY }
+                }));
+              }
+            } else {
+              isDoubleTapDrag = false;
+            }
+          } else if (numFingers === 2) {
+            isTwoFingerTap = true;
+            isDoubleTapDrag = false;
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            touchStartCoords = {
+              x: (touch1.clientX + touch2.clientX) / 2,
+              y: (touch1.clientY + touch2.clientY) / 2
+            };
+            touchStartTime = Date.now();
+          }
+          e.preventDefault();
+          return;
+        }
+
+        // --- MODO TOQUE DIRETO ---
+        if (touchMode === 'direct') {
+          if (numFingers === 1) {
+            isTwoFingerTap = false;
+            const touch = e.touches[0];
+            const coords = getScaledCoords(touch.clientX, touch.clientY);
+            touchStartCoords = coords;
+            touchStartTime = Date.now();
+
+            if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
+              }));
+              activeLeftClick = true;
+            }
+          } else if (numFingers === 2) {
+            isTwoFingerTap = true;
+            if (activeLeftClick && controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 0 }
+              }));
+              activeLeftClick = false;
+            }
+
+            const touch1 = e.touches[0];
+            const touch2 = e.touches[1];
+            const midX = (touch1.clientX + touch2.clientX) / 2;
+            const midY = (touch1.clientY + touch2.clientY) / 2;
+            const coords = getScaledCoords(midX, midY);
+
+            if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousedown', button: 2, x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 2, x: coords.x, y: coords.y }
+              }));
+            }
+          }
+          e.preventDefault();
+        }
       }, { passive: false });
 
       remoteScreen.addEventListener('touchmove', (e) => {
-        if (e.touches.length === 1 && !isTwoFingerTap && activeLeftClick) {
-          const touch = e.touches[0];
-          const coords = getScaledCoords(touch.clientX, touch.clientY);
-          if (coords) {
-            throttledMouseMove(coords);
+        const numFingers = e.touches.length;
+
+        // --- MODO ZOOM-PAN ---
+        if (touchMode === 'zoom-pan') {
+          if (isPinching && numFingers === 2) {
+            const currentDist = Math.hypot(
+              e.touches[0].clientX - e.touches[1].clientX,
+              e.touches[0].clientY - e.touches[1].clientY
+            );
+            // Calcula o zoom
+            zoomScale = Math.max(1, Math.min(5, pinchStartScale * (currentDist / pinchStartDistance)));
+
+            const currentMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+            const currentMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+            // Pan
+            panX = panStartX + (currentMidX - touchStartMidX) / zoomScale;
+            panY = panStartY + (currentMidY - touchStartMidY) / zoomScale;
+
+            updateZoomPanTransform();
           }
+          e.preventDefault();
+          return;
         }
-        e.preventDefault();
+
+        // --- MODO TRACKPAD ---
+        if (touchMode === 'trackpad') {
+          if (numFingers === 1) {
+            const touch = e.touches[0];
+            if (touchStartCoords) {
+              const dist = Math.hypot(touch.clientX - touchStartCoords.x, touch.clientY - touchStartCoords.y);
+              if (dist > TOUCH_MOVE_THRESHOLD) touchMoved = true;
+            }
+
+            const dx = touch.clientX - lastTouchX;
+            const dy = touch.clientY - lastTouchY;
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+
+            const rect = remoteScreen.getBoundingClientRect();
+            const sensitivity = 1.2;
+
+            virtualMouseX = Math.max(0, Math.min(1, virtualMouseX + (dx * sensitivity) / rect.width));
+            virtualMouseY = Math.max(0, Math.min(1, virtualMouseY + (dy * sensitivity) / rect.height));
+
+            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: virtualMouseX, y: virtualMouseY }
+              }));
+            }
+          }
+          e.preventDefault();
+          return;
+        }
+
+        // --- MODO TOQUE DIRETO ---
+        if (touchMode === 'direct') {
+          if (numFingers === 1 && !isTwoFingerTap && activeLeftClick) {
+            const touch = e.touches[0];
+            const coords = getScaledCoords(touch.clientX, touch.clientY);
+            if (coords) {
+              throttledMouseMove(coords);
+            }
+          }
+          e.preventDefault();
+        }
       }, { passive: false });
 
       remoteScreen.addEventListener('touchend', (e) => {
-        if (activeLeftClick) {
-          if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mouseup', button: 0 }
-            }));
-          }
-          activeLeftClick = false;
+        // --- MODO ZOOM-PAN ---
+        if (touchMode === 'zoom-pan') {
+          isPinching = false;
+          e.preventDefault();
+          return;
         }
-        e.preventDefault();
+
+        // --- MODO TRACKPAD ---
+        if (touchMode === 'trackpad') {
+          const touchDuration = Date.now() - touchStartTime;
+
+          if (isDoubleTapDrag) {
+            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 0 }
+              }));
+            }
+            isDoubleTapDrag = false;
+            lastTapTime = 0;
+          } else if (!touchMoved && touchDuration < 300) {
+            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+              if (isTwoFingerTap) {
+                // Clique direito na posição corrente do mousepad
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mousedown', button: 2, x: virtualMouseX, y: virtualMouseY }
+                }));
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mouseup', button: 2, x: virtualMouseX, y: virtualMouseY }
+                }));
+              } else {
+                // Clique esquerdo na posição corrente do mousepad
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mousedown', button: 0, x: virtualMouseX, y: virtualMouseY }
+                }));
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mouseup', button: 0, x: virtualMouseX, y: virtualMouseY }
+                }));
+                lastTapTime = Date.now();
+              }
+            }
+          } else {
+            lastTapTime = 0;
+          }
+          touchStartCoords = null;
+          e.preventDefault();
+          return;
+        }
+
+        // --- MODO TOQUE DIRETO ---
+        if (touchMode === 'direct') {
+          if (activeLeftClick) {
+            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 0 }
+              }));
+            }
+            activeLeftClick = false;
+          }
+          e.preventDefault();
+        }
       }, { passive: false });
 
       remoteScreen.addEventListener('contextmenu', (e) => {
@@ -792,6 +1048,41 @@
         mainWs.send(JSON.stringify({ type: 'refresh' })); // Apenas uma trigger, o servidor atualiza
       }
     });
+
+    // Eventos do Modal de Entrada por Toque
+    if (touchSettingsBtn) {
+      touchSettingsBtn.addEventListener('click', () => {
+        const radio = touchSettingsModal.querySelector(`input[name="touch-mode"][value="${touchMode}"]`);
+        if (radio) radio.checked = true;
+        touchSettingsModal.style.display = 'flex';
+      });
+    }
+
+    if (closeTouchSettingsBtn) {
+      closeTouchSettingsBtn.addEventListener('click', () => {
+        touchSettingsModal.style.display = 'none';
+      });
+    }
+
+    if (saveTouchSettingsBtn) {
+      saveTouchSettingsBtn.addEventListener('click', () => {
+        const selectedRadio = touchSettingsModal.querySelector('input[name="touch-mode"]:checked');
+        if (selectedRadio) {
+          const oldMode = touchMode;
+          touchMode = selectedRadio.value;
+          localStorage.setItem('touch-mode', touchMode);
+          log(`Modo de toque alterado para: ${touchMode}`, 'info');
+
+          // Se o usuário mudou de/para o modo de zoom-pan, vamos resetar qualquer zoom/pan anterior
+          if (oldMode === 'zoom-pan' || touchMode === 'zoom-pan') {
+            if (window.resetZoomPan) {
+              window.resetZoomPan();
+            }
+          }
+        }
+        touchSettingsModal.style.display = 'none';
+      });
+    }
 
     // Iniciar tudo
     initDashboardMonitor();
