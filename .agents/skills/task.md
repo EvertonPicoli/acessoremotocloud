@@ -1,0 +1,8 @@
+- [ ] Instalar pacote @roamhq/wrtc no diretório principal acessoremotocloud
+- [ ] Modificar InputSimulator.cs para capturar RGBA bruto com cabeçalho binário de 16 bytes
+- [ ] Compilar localmente os executáveis InputSimulator_v6.exe e InputSimulator.exe
+- [ ] Modificar local-agent.js para gerenciar PeerConnection WebRTC e converter RGBA -> I420 YUV
+- [ ] Modificar server/public/index.html para usar tag `<video>` e negociar WebRTC
+- [ ] Modificar public/index.html para o mesmo comportamento WebRTC
+- [ ] Testar localmente a conexão e validar tempo de resposta
+- [ ] Subir as alterações para o Git para build no Coolify

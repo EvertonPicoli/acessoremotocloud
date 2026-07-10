@@ -94,7 +94,7 @@
           <p class="description">Recebendo transmissão de tela nativa da nuvem...</p>
         </div>
 
-        <img id="remote-screen" alt="Remote Screen Stream" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; cursor: crosshair; display: none;" />
+        <video id="remote-screen" autoplay playsinline muted style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; cursor: crosshair; display: none;"></video>
       </section>
 
       <!-- Barra lateral de logs da sessão -->
@@ -161,6 +161,7 @@
 
     let mainWs = null; // WebSocket principal para monitorar a lista
     let controlWs = null; // WebSocket secundário para controle de tela ativo
+    let pc = null; // RTCPeerConnection para WebRTC
     let pingInterval = null;
     let selectedAgentId = null;
     let selectedAgentName = '';
@@ -283,7 +284,6 @@
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       controlWs = new WebSocket(`${protocol}//${window.location.host}/ws?role=client&targetId=${agentId}`);
-      controlWs.binaryType = 'blob';
 
       controlWs.onopen = () => {
         log('Canal de conexão aberto. Autenticando com o PIN no agente...', 'info');
@@ -293,25 +293,8 @@
         }));
       };
 
-      controlWs.onmessage = (message) => {
+      controlWs.onmessage = async (message) => {
         const raw = message.data;
-        
-        // Se for um Blob binário, trata como frame de tela direto (otimização extrema sem base64 ou JSON)
-        if (raw instanceof Blob) {
-          const oldUrl = remoteScreen.src;
-          const newUrl = URL.createObjectURL(raw);
-          remoteScreen.src = newUrl;
-          
-          if (oldUrl && oldUrl.startsWith('blob:')) {
-            URL.revokeObjectURL(oldUrl); // Libera memória GDI/RAM da imagem antiga
-          }
-          
-          if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-            controlWs.send(JSON.stringify({ type: 'frame_ack' }));
-          }
-          return;
-        }
-        
         const data = JSON.parse(raw);
 
         switch (data.type) {
@@ -329,17 +312,39 @@
             remoteScreen.style.display = 'block';
             toolbar.style.display = 'flex';
 
-            // Inicializa flag de frame pendente
-            remoteScreen._pendingFrame = false;
-
             startPing();
             setupInputHandlers();
+            
+            // Inicia negociação WebRTC P2P
+            initWebRtcConnection();
             break;
 
           case 'auth-error':
             log(`Erro de autenticação: ${data.message}`, 'error');
             alert(`Erro de autenticação: ${data.message}`);
             resetToDashboard();
+            break;
+
+          case 'webrtc-answer':
+            log('Recebido webrtc-answer do agente.', 'info');
+            if (pc) {
+              try {
+                await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+                log('SDP remote description configurado no WebRTC.', 'info');
+              } catch (err) {
+                log(`Erro ao configurar SDP answer: ${err.message}`, 'error');
+              }
+            }
+            break;
+
+          case 'webrtc-candidate':
+            if (pc) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+              } catch (err) {
+                log(`Erro ao adicionar ICE candidate: ${err.message}`, 'error');
+              }
+            }
             break;
 
           case 'pong':
@@ -566,6 +571,71 @@
           }));
         }
       });
+    }
+
+    function closePeerConnection() {
+      if (pc) {
+        try {
+          pc.close();
+        } catch {}
+        pc = null;
+        log('Conexão WebRTC encerrada.', 'info');
+      }
+    }
+
+    async function initWebRtcConnection() {
+      log('Iniciando negociação WebRTC...', 'info');
+      closePeerConnection();
+
+      pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ]
+      });
+
+      // Escuta o recebimento da faixa de vídeo
+      pc.ontrack = (event) => {
+        log('Stream de vídeo WebRTC recebida com sucesso!', 'success');
+        remoteScreen.srcObject = event.streams[0];
+      };
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({
+            type: 'webrtc-candidate',
+            candidate: event.candidate
+          }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        log(`Estado da conexão WebRTC: ${pc.connectionState}`, 'info');
+        if (pc.connectionState === 'connected') {
+          placeholder.style.display = 'none';
+          remoteScreen.style.display = 'block';
+        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+          closePeerConnection();
+        }
+      };
+
+      try {
+        // Solicita recebimento de vídeo
+        pc.addTransceiver('video', { direction: 'recvonly' });
+
+        // Cria a oferta de conexão (SDP Offer)
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        // Envia a oferta para o agente através do WebSocket de sinalização
+        controlWs.send(JSON.stringify({
+          type: 'webrtc-offer',
+          offer: offer
+        }));
+        log('SDP Offer enviado para o agente.', 'info');
+      } catch (err) {
+        log(`Erro ao criar oferta WebRTC: ${err.message}`, 'error');
+      }
     }
 
     function resetToDashboard() {

@@ -396,24 +396,38 @@ let reconnectTimerInput = null;
 let stdoutBuffer = '';
 let wsClient = null;
 let isAuthenticated = false;
-let clientReadyForFrame = true;
-let lastFrameSentTime = 0;
-let pendingFrameToSend = null;
 
-function trySendPendingFrame() {
-  if (!pendingFrameToSend) return;
-  if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
-    const now = Date.now();
-    // Fallback de 2s para destravar caso o ACK se perca
-    if (!clientReadyForFrame && now - lastFrameSentTime > 2000) {
-      clientReadyForFrame = true;
-    }
+// Configuração WebRTC
+const wrtc = require('@roamhq/wrtc');
+const { RTCVideoSource, rgbaToI420 } = wrtc.nonstandard;
 
-    if (clientReadyForFrame) {
-      clientReadyForFrame = false;
-      lastFrameSentTime = now;
-      wsClient.send(pendingFrameToSend, { binary: true });
-      pendingFrameToSend = null; // Limpa após enviar
+const videoSource = new RTCVideoSource();
+const videoTrack = videoSource.createTrack();
+let peerConnection = null;
+let tcpBuffer = Buffer.alloc(0);
+
+function closePeerConnection() {
+  if (peerConnection) {
+    try {
+      peerConnection.close();
+    } catch {}
+    peerConnection = null;
+    console.log('Conexão WebRTC fechada.');
+  }
+}
+
+function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
+  // Envia frame apenas se houver conexão ativa estabelecida
+  if (peerConnection && peerConnection.connectionState === 'connected') {
+    try {
+      const i420Data = rgbaToI420(rgbaBuffer, width, height);
+      videoSource.onFrame({
+        width,
+        height,
+        data: i420Data
+      });
+    } catch (err) {
+      console.error('Erro ao injetar frame no WebRTC:', err.message);
     }
   }
 }
@@ -434,29 +448,32 @@ function connectFrameSocket() {
     }
   });
 
-  tcpSocketFrame.on('data', (data) => {
-    stdoutBuffer += data.toString();
-    let lines = stdoutBuffer.split('\n');
-    stdoutBuffer = lines.pop();
+  tcpSocketFrame.on('data', (chunk) => {
+    tcpBuffer = Buffer.concat([tcpBuffer, chunk]);
 
-    let newestFrameBase64 = null;
-    // Processa de trás para frente para achar o frame mais recente e imprimir todos os logs
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const trimmed = lines[i].trim();
-      if (trimmed.startsWith('FRAME:')) {
-        if (!newestFrameBase64) {
-          newestFrameBase64 = trimmed.substring(6);
-        }
-      } else if (trimmed.startsWith('LOG:')) {
-        console.log(`[InputSimulator]: ${trimmed.substring(4)}`);
-      } else if (trimmed) {
-        console.log(`[InputSimulator]: ${trimmed}`);
+    while (tcpBuffer.length >= 16) {
+      const magic = tcpBuffer.toString('utf8', 0, 4);
+      const width = tcpBuffer.readInt32LE(4);
+      const height = tcpBuffer.readInt32LE(8);
+      const payloadSize = tcpBuffer.readInt32LE(12);
+
+      if (tcpBuffer.length < 16 + payloadSize) {
+        break; // Aguarda mais dados do payload
       }
-    }
 
-    if (newestFrameBase64) {
-      pendingFrameToSend = Buffer.from(newestFrameBase64, 'base64');
-      trySendPendingFrame();
+      const payload = tcpBuffer.slice(16, 16 + payloadSize);
+      tcpBuffer = tcpBuffer.slice(16 + payloadSize);
+
+      if (magic === 'FRME') {
+        handleIncomingRgbaFrame(width, height, payload);
+      } else if (magic === 'LOG_') {
+        const message = payload.toString('utf8');
+        console.log(`[InputSimulator]: ${message}`);
+      } else {
+        console.error(`[InputSimulator] Protocolo corrompido, magic inválido: ${magic}`);
+        tcpBuffer = Buffer.alloc(0);
+        break;
+      }
     }
   });
 
@@ -540,8 +557,9 @@ function connectToCentralServer() {
       } 
       
       else if (data.type === 'stop-capture-relay') {
-        console.log('Sessão fechada pelo Dashboard. Parando captura de tela.');
+        console.log('Sessão fechada pelo Dashboard. Parando captura de tela e limpando WebRTC.');
         isAuthenticated = false;
+        closePeerConnection();
         sendFrameControlToSimulator({ type: 'stop_capture' });
       }
 
@@ -549,10 +567,62 @@ function connectToCentralServer() {
         if (data.type === 'ping') {
           wsClient.send(JSON.stringify({ type: 'pong', time: data.time }));
         } 
-        
-        else if (data.type === 'frame_ack') {
-          clientReadyForFrame = true;
-          trySendPendingFrame();
+
+        else if (data.type === 'webrtc-offer') {
+          console.log('Recebido webrtc-offer do cliente...');
+          closePeerConnection(); // Fecha conexão WebRTC anterior se houver
+
+          peerConnection = new wrtc.RTCPeerConnection({
+            iceServers: [
+              { urls: 'stun:stun.l.google.com:19302' },
+              { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+          });
+
+          // Adiciona a faixa de vídeo capturada do C# ao WebRTC
+          peerConnection.addTrack(videoTrack);
+
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate && wsClient && wsClient.readyState === WebSocket.OPEN) {
+              wsClient.send(JSON.stringify({
+                type: 'webrtc-candidate',
+                candidate: event.candidate
+              }));
+            }
+          };
+
+          peerConnection.onconnectionstatechange = () => {
+            console.log(`WebRTC Connection State: ${peerConnection.connectionState}`);
+            if (peerConnection.connectionState === 'disconnected' || 
+                peerConnection.connectionState === 'failed' || 
+                peerConnection.connectionState === 'closed') {
+              closePeerConnection();
+            }
+          };
+
+          try {
+            await peerConnection.setRemoteDescription(new wrtc.RTCSessionDescription(data.offer));
+            const answer = await peerConnection.createAnswer();
+            await peerConnection.setLocalDescription(answer);
+
+            wsClient.send(JSON.stringify({
+              type: 'webrtc-answer',
+              answer: answer
+            }));
+            console.log('Resposta webrtc-answer enviada ao cliente com sucesso.');
+          } catch (err) {
+            console.error('Erro ao configurar WebRTC PeerConnection:', err);
+          }
+        }
+
+        else if (data.type === 'webrtc-candidate') {
+          if (peerConnection) {
+            try {
+              await peerConnection.addIceCandidate(new wrtc.RTCIceCandidate(data.candidate));
+            } catch (err) {
+              console.error('Erro ao adicionar ICE candidate recebido:', err);
+            }
+          }
         }
 
         else if (data.type === 'input') {
@@ -576,8 +646,7 @@ function connectToCentralServer() {
   wsClient.on('close', () => {
     console.log('❌ Conexão com o servidor central perdida. Tentando reconectar em 5 segundos...');
     isAuthenticated = false;
-    clientReadyForFrame = true;
-    pendingFrameToSend = null;
+    closePeerConnection();
     sendFrameControlToSimulator({ type: 'stop_capture' });
     setTimeout(connectToCentralServer, 5000);
   });

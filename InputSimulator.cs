@@ -92,16 +92,36 @@ class InputSimulator
 
     static bool isCapturing = false;
     static System.Threading.Thread captureThread;
-    static StreamWriter tcpWriter = null;
+    static NetworkStream tcpStream = null;
 
     static void LogToAgent(string message)
     {
-        if (tcpWriter != null)
+        if (tcpStream != null)
         {
             try
             {
-                tcpWriter.WriteLine("LOG:" + message);
-                tcpWriter.Flush();
+                byte[] logBytes = System.Text.Encoding.UTF8.GetBytes(message);
+                byte[] header = new byte[16];
+                
+                // Magic: 'L', 'O', 'G', '_'
+                header[0] = 0x4C;
+                header[1] = 0x4F;
+                header[2] = 0x47;
+                header[3] = 0x5F;
+                
+                // Param1 = 0, Param2 = 0
+                // PayloadSize (Little Endian)
+                header[12] = (byte)(logBytes.Length & 0xFF);
+                header[13] = (byte)((logBytes.Length >> 8) & 0xFF);
+                header[14] = (byte)((logBytes.Length >> 16) & 0xFF);
+                header[15] = (byte)((logBytes.Length >> 24) & 0xFF);
+
+                lock (tcpStream)
+                {
+                    tcpStream.Write(header, 0, 16);
+                    tcpStream.Write(logBytes, 0, logBytes.Length);
+                    tcpStream.Flush();
+                }
             }
             catch {}
         }
@@ -191,24 +211,69 @@ class InputSimulator
                             gScaled.DrawImage(bmp, 0, 0, destWidth, destHeight);
                         }
 
-                        using (MemoryStream ms = new MemoryStream())
+                        // Lock bits do bitmap scaledBmp para acessar memória direta de pixels
+                        Rectangle rect = new Rectangle(0, 0, destWidth, destHeight);
+                        System.Drawing.Imaging.BitmapData bmpData = scaledBmp.LockBits(
+                            rect, 
+                            System.Drawing.Imaging.ImageLockMode.ReadOnly,
+                            System.Drawing.Imaging.PixelFormat.Format32bppArgb
+                        );
+
+                        IntPtr ptr = bmpData.Scan0;
+                        int bytesCount = Math.Abs(bmpData.Stride) * destHeight;
+                        byte[] rgbValues = new byte[bytesCount];
+
+                        // Copia memória direta do Bitmap para o array
+                        System.Runtime.InteropServices.Marshal.Copy(ptr, rgbValues, 0, bytesCount);
+                        scaledBmp.UnlockBits(bmpData);
+
+                        // Converte formato da memória do Bitmap GDI (BGRA) para RGBA exigido pelo WebRTC
+                        for (int i = 0; i < bytesCount; i += 4)
                         {
-                            scaledBmp.Save(ms, jpgEncoder, myEncoderParameters);
-                            byte[] bytes = ms.ToArray();
-                            string base64 = Convert.ToBase64String(bytes);
-                            if (tcpWriter != null)
+                            byte blue = rgbValues[i];
+                            rgbValues[i] = rgbValues[i + 2]; // Copia Vermelho para o slot do Azul
+                            rgbValues[i + 2] = blue;         // Copia Azul para o slot do Vermelho
+                            rgbValues[i + 3] = 255;          // Garante opacidade total
+                        }
+
+                        if (tcpStream != null)
+                        {
+                            try
                             {
-                                try
+                                byte[] header = new byte[16];
+                                
+                                // Magic: 'F', 'R', 'M', 'E'
+                                header[0] = 0x46;
+                                header[1] = 0x52;
+                                header[2] = 0x4D;
+                                header[3] = 0x45;
+                                
+                                // Width (Little Endian)
+                                header[4] = (byte)(destWidth & 0xFF);
+                                header[5] = (byte)((destWidth >> 8) & 0xFF);
+                                header[6] = (byte)((destWidth >> 16) & 0xFF);
+                                header[7] = (byte)((destWidth >> 24) & 0xFF);
+                                
+                                // Height (Little Endian)
+                                header[8] = (byte)(destHeight & 0xFF);
+                                header[9] = (byte)((destHeight >> 8) & 0xFF);
+                                header[10] = (byte)((destHeight >> 16) & 0xFF);
+                                header[11] = (byte)((destHeight >> 24) & 0xFF);
+                                
+                                // PayloadSize (Little Endian)
+                                header[12] = (byte)(bytesCount & 0xFF);
+                                header[13] = (byte)((bytesCount >> 8) & 0xFF);
+                                header[14] = (byte)((bytesCount >> 16) & 0xFF);
+                                header[15] = (byte)((bytesCount >> 24) & 0xFF);
+
+                                lock (tcpStream)
                                 {
-                                    tcpWriter.WriteLine("FRAME:" + base64);
-                                    tcpWriter.Flush();
-                                    if (new Random().Next(0, 100) == 0)
-                                    {
-                                        LogToAgent("[Simulator] Loop de captura ativo (enviando frames...)");
-                                    }
+                                    tcpStream.Write(header, 0, 16);
+                                    tcpStream.Write(rgbValues, 0, bytesCount);
+                                    tcpStream.Flush();
                                 }
-                                catch {}
                             }
+                            catch {}
                         }
                     }
                 }
@@ -284,9 +349,8 @@ class InputSimulator
                 {
                     client.NoDelay = true;
                     using (NetworkStream stream = client.GetStream())
-                    using (StreamWriter writer = new StreamWriter(stream))
                     {
-                        tcpWriter = writer;
+                        tcpStream = stream;
                         Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de FRAMES");
                         string line;
                         while ((line = ReadLine(stream)) != null)
@@ -308,7 +372,7 @@ class InputSimulator
                             }
                             catch {}
                         }
-                        tcpWriter = null;
+                        tcpStream = null;
                     }
                 }
             }
