@@ -171,6 +171,9 @@
     let lastMouseMoveTime = 0;
     const THROTTLE_MS = 40; // ~25 transmissões por segundo
     let pendingMoveCoords = null;
+    
+    // Rastreia os botões do mouse atualmente pressionados para evitar feedback loop em testes locais
+    let activeButtons = {};
 
     function log(message, type = 'info') {
       const entry = document.createElement('div');
@@ -451,6 +454,9 @@
       });
 
       remoteScreen.addEventListener('mousedown', (e) => {
+        if (activeButtons[e.button]) return; // Evita loop de feedback infinito em testes locais
+        activeButtons[e.button] = true;
+
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
           const coords = getScaledCoords(e.clientX, e.clientY);
           if (coords) {
@@ -468,6 +474,8 @@
       });
 
       remoteScreen.addEventListener('mouseup', (e) => {
+        activeButtons[e.button] = false;
+
         if (controlWs && controlWs.readyState === WebSocket.OPEN) {
           const coords = getScaledCoords(e.clientX, e.clientY);
           if (coords) {
@@ -482,6 +490,11 @@
             }));
           }
         }
+      });
+
+      // Evita o arrasto nativo da tag <img> no navegador, permitindo operações normais de arrastar no controle remoto
+      remoteScreen.addEventListener('dragstart', (e) => {
+        e.preventDefault();
       });
 
       // Suporte para Toque / Gestos (Celular e Tablet)
@@ -581,6 +594,7 @@
       }
       lastMouseMoveTime = 0;
       pendingMoveCoords = null;
+      activeButtons = {};
 
       remoteScreen._pendingFrame = false;
       remoteScreen.src = '';
