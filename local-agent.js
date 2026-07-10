@@ -398,6 +398,26 @@ let wsClient = null;
 let isAuthenticated = false;
 let clientReadyForFrame = true;
 let lastFrameSentTime = 0;
+let pendingFrameToSend = null;
+
+function trySendPendingFrame() {
+  if (!pendingFrameToSend) return;
+  if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
+    const now = Date.now();
+    // Fallback de 2s para destravar caso o ACK se perca
+    if (!clientReadyForFrame && now - lastFrameSentTime > 2000) {
+      clientReadyForFrame = true;
+    }
+
+    if (clientReadyForFrame) {
+      clientReadyForFrame = false;
+      lastFrameSentTime = now;
+      const payload = JSON.stringify({ type: 'frame', image: pendingFrameToSend });
+      wsClient.send(payload);
+      pendingFrameToSend = null; // Limpa após enviar
+    }
+  }
+}
 
 function connectFrameSocket() {
   if (reconnectTimerFrame) clearTimeout(reconnectTimerFrame);
@@ -420,31 +440,24 @@ function connectFrameSocket() {
     let lines = stdoutBuffer.split('\n');
     stdoutBuffer = lines.pop();
 
-    for (const line of lines) {
-      const trimmed = line.trim();
+    let newestFrameBase64 = null;
+    // Processa de trás para frente para achar o frame mais recente e imprimir todos os logs
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trimmed = lines[i].trim();
       if (trimmed.startsWith('FRAME:')) {
-        const base64 = trimmed.substring(6);
-
-        if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
-          const now = Date.now();
-          // Fallback: se passou mais de 2 segundos desde o último frame enviado,
-          // força a liberação caso o ACK tenha se perdido ou travado no client.
-          if (!clientReadyForFrame && now - lastFrameSentTime > 2000) {
-            clientReadyForFrame = true;
-          }
-
-          if (clientReadyForFrame) {
-            clientReadyForFrame = false;
-            lastFrameSentTime = now;
-            const payload = JSON.stringify({ type: 'frame', image: base64 });
-            wsClient.send(payload);
-          }
+        if (!newestFrameBase64) {
+          newestFrameBase64 = trimmed.substring(6);
         }
       } else if (trimmed.startsWith('LOG:')) {
         console.log(`[InputSimulator]: ${trimmed.substring(4)}`);
       } else if (trimmed) {
         console.log(`[InputSimulator]: ${trimmed}`);
       }
+    }
+
+    if (newestFrameBase64) {
+      pendingFrameToSend = newestFrameBase64;
+      trySendPendingFrame();
     }
   });
 
@@ -540,6 +553,7 @@ function connectToCentralServer() {
         
         else if (data.type === 'frame_ack') {
           clientReadyForFrame = true;
+          trySendPendingFrame();
         }
 
         else if (data.type === 'input') {
@@ -564,6 +578,7 @@ function connectToCentralServer() {
     console.log('❌ Conexão com o servidor central perdida. Tentando reconectar em 5 segundos...');
     isAuthenticated = false;
     clientReadyForFrame = true;
+    pendingFrameToSend = null;
     sendFrameControlToSimulator({ type: 'stop_capture' });
     setTimeout(connectToCentralServer, 5000);
   });
