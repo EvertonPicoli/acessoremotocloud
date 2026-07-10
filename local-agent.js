@@ -403,6 +403,8 @@ const { RTCVideoSource, rgbaToI420 } = wrtc.nonstandard;
 
 const videoSource = new RTCVideoSource();
 const videoTrack = videoSource.createTrack();
+const mediaStream = new wrtc.MediaStream();
+mediaStream.addTrack(videoTrack);
 let peerConnection = null;
 let tcpBuffer = Buffer.alloc(0);
 
@@ -599,8 +601,8 @@ function connectToCentralServer() {
             ]
           });
 
-          // Adiciona a faixa de vídeo capturada do C# ao WebRTC
-          peerConnection.addTrack(videoTrack);
+          // Adiciona a faixa de vídeo capturada do C# ao WebRTC associada ao stream
+          peerConnection.addTrack(videoTrack, mediaStream);
 
           peerConnection.onicecandidate = (event) => {
             if (event.candidate && wsClient && wsClient.readyState === WebSocket.OPEN) {

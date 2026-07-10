@@ -439,7 +439,16 @@
       // Escuta o recebimento da faixa de vídeo
       pc.ontrack = (event) => {
         log('Stream de vídeo WebRTC recebida com sucesso!', 'success');
-        remoteScreen.srcObject = event.streams[0];
+        let stream = event.streams[0];
+        if (!stream) {
+          stream = new MediaStream([event.track]);
+        }
+        remoteScreen.srcObject = stream;
+        
+        // Garante que o elemento de vídeo dê play
+        remoteScreen.play().catch(err => {
+          console.error("Erro ao reproduzir vídeo:", err);
+        });
       };
 
       pc.onicecandidate = (event) => {
