@@ -86,7 +86,7 @@ if (isPackaged) {
     process.exit(1);
   }
 } else {
-  EXE_FILE = path.join(__dirname, 'InputSimulator_v5.exe');
+  EXE_FILE = path.join(__dirname, 'InputSimulator_v6.exe');
 }
 
 // 1. Compilar o simulador C# se o .exe não existir (Apenas modo desenvolvimento)
@@ -396,6 +396,7 @@ function connectFrameSocket() {
   }
   
   tcpSocketFrame = net.createConnection({ port: 9997, host: '127.0.0.1' }, () => {
+    tcpSocketFrame.setNoDelay(true);
     console.log('✅ Conectado ao InputSimulator (Frames) via TCP (Porta 9997)!');
     if (isAuthenticated) {
       console.log('Solicitando início de captura de tela ao simulador...');
@@ -445,6 +446,7 @@ function connectInputSocket() {
   }
 
   tcpSocketInput = net.createConnection({ port: 9998, host: '127.0.0.1' }, () => {
+    tcpSocketInput.setNoDelay(true);
     console.log('✅ Conectado ao InputSimulator (Inputs) via TCP (Porta 9998)!');
   });
 

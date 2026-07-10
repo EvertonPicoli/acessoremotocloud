@@ -251,33 +251,35 @@ class InputSimulator
             try
             {
                 using (TcpClient client = server.AcceptTcpClient())
-                using (NetworkStream stream = client.GetStream())
-                using (StreamReader reader = new StreamReader(stream))
-                using (StreamWriter writer = new StreamWriter(stream))
                 {
-                    tcpWriter = writer;
-                    Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de FRAMES");
-                    string line;
-                    while ((line = reader.ReadLine()) != null)
+                    client.NoDelay = true;
+                    using (NetworkStream stream = client.GetStream())
+                    using (StreamWriter writer = new StreamWriter(stream))
                     {
-                        try
+                        tcpWriter = writer;
+                        Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de FRAMES");
+                        string line;
+                        while ((line = ReadLine(stream)) != null)
                         {
-                            Match typeMatch = typeRegex.Match(line);
-                            if (!typeMatch.Success) continue;
-                            string type = typeMatch.Groups[1].Value;
+                            try
+                            {
+                                Match typeMatch = typeRegex.Match(line);
+                                if (!typeMatch.Success) continue;
+                                string type = typeMatch.Groups[1].Value;
 
-                            if (type == "start_capture")
-                            {
-                                StartCapture();
+                                if (type == "start_capture")
+                                {
+                                    StartCapture();
+                                }
+                                else if (type == "stop_capture")
+                                {
+                                    StopCapture();
+                                }
                             }
-                            else if (type == "stop_capture")
-                            {
-                                StopCapture();
-                            }
+                            catch {}
                         }
-                        catch {}
+                        tcpWriter = null;
                     }
-                    tcpWriter = null;
                 }
             }
             catch {}
@@ -310,84 +312,104 @@ class InputSimulator
             try
             {
                 using (TcpClient client = server.AcceptTcpClient())
-                using (NetworkStream stream = client.GetStream())
-                using (StreamReader reader = new StreamReader(stream))
                 {
-                    Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de INPUTS");
-                    string line;
-                    while ((line = reader.ReadLine()) != null)
+                    client.NoDelay = true;
+                    using (NetworkStream stream = client.GetStream())
                     {
-                        try
+                        Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de INPUTS");
+                        string line;
+                        while ((line = ReadLine(stream)) != null)
                         {
-                            Match typeMatch = typeRegex.Match(line);
-                            if (!typeMatch.Success) continue;
-                            string type = typeMatch.Groups[1].Value;
+                            try
+                            {
+                                Match typeMatch = typeRegex.Match(line);
+                                if (!typeMatch.Success) continue;
+                                string type = typeMatch.Groups[1].Value;
 
-                            if (type == "mousemove")
-                            {
-                                Match xMatch = xRegex.Match(line);
-                                Match yMatch = yRegex.Match(line);
-                                if (xMatch.Success && yMatch.Success)
+                                if (type == "mousemove")
                                 {
-                                    int x = int.Parse(xMatch.Groups[1].Value);
-                                    int y = int.Parse(yMatch.Groups[1].Value);
-                                    SetCursorPos(x, y);
+                                    Match xMatch = xRegex.Match(line);
+                                    Match yMatch = yRegex.Match(line);
+                                    if (xMatch.Success && yMatch.Success)
+                                    {
+                                        int x = int.Parse(xMatch.Groups[1].Value);
+                                        int y = int.Parse(yMatch.Groups[1].Value);
+                                        SetCursorPos(x, y);
+                                    }
                                 }
-                            }
-                            else if (type == "mousedown")
-                            {
-                                Match btnMatch = buttonRegex.Match(line);
-                                if (btnMatch.Success)
+                                else if (type == "mousedown")
                                 {
-                                    int button = int.Parse(btnMatch.Groups[1].Value);
-                                    uint flags = 0;
-                                    if (button == 0) flags = MOUSEEVENTF_LEFTDOWN;
-                                    else if (button == 2) flags = MOUSEEVENTF_RIGHTDOWN;
-                                    else if (button == 1) flags = MOUSEEVENTF_MIDDLEDOWN;
+                                    Match btnMatch = buttonRegex.Match(line);
+                                    if (btnMatch.Success)
+                                    {
+                                        int button = int.Parse(btnMatch.Groups[1].Value);
+                                        uint flags = 0;
+                                        if (button == 0) flags = MOUSEEVENTF_LEFTDOWN;
+                                        else if (button == 2) flags = MOUSEEVENTF_RIGHTDOWN;
+                                        else if (button == 1) flags = MOUSEEVENTF_MIDDLEDOWN;
 
-                                    mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                        mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                    }
                                 }
-                            }
-                            else if (type == "mouseup")
-                            {
-                                Match btnMatch = buttonRegex.Match(line);
-                                if (btnMatch.Success)
+                                else if (type == "mouseup")
                                 {
-                                    int button = int.Parse(btnMatch.Groups[1].Value);
-                                    uint flags = 0;
-                                    if (button == 0) flags = MOUSEEVENTF_LEFTUP;
-                                    else if (button == 2) flags = MOUSEEVENTF_RIGHTUP;
-                                    else if (button == 1) flags = MOUSEEVENTF_MIDDLEUP;
+                                    Match btnMatch = buttonRegex.Match(line);
+                                    if (btnMatch.Success)
+                                    {
+                                        int button = int.Parse(btnMatch.Groups[1].Value);
+                                        uint flags = 0;
+                                        if (button == 0) flags = MOUSEEVENTF_LEFTUP;
+                                        else if (button == 2) flags = MOUSEEVENTF_RIGHTUP;
+                                        else if (button == 1) flags = MOUSEEVENTF_MIDDLEUP;
 
-                                    mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                        mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                    }
                                 }
-                            }
-                            else if (type == "keydown")
-                            {
-                                Match vkMatch = vkRegex.Match(line);
-                                if (vkMatch.Success)
+                                else if (type == "keydown")
                                 {
-                                    ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                                    byte scanCode = (byte)MapVirtualKey(vk, 0);
-                                    keybd_event((byte)vk, scanCode, KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                    Match vkMatch = vkRegex.Match(line);
+                                    if (vkMatch.Success)
+                                    {
+                                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                        byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                        keybd_event((byte)vk, scanCode, KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                    }
                                 }
-                            }
-                            else if (type == "keyup")
-                            {
-                                Match vkMatch = vkRegex.Match(line);
-                                if (vkMatch.Success)
+                                else if (type == "keyup")
                                 {
-                                    ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                                    byte scanCode = (byte)MapVirtualKey(vk, 0);
-                                    keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
+                                    Match vkMatch = vkRegex.Match(line);
+                                    if (vkMatch.Success)
+                                    {
+                                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                        byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                        keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
+                                    }
                                 }
                             }
+                            catch {}
                         }
-                        catch {}
                     }
                 }
             }
             catch {}
         }
+    }
+
+    static string ReadLine(NetworkStream stream)
+    {
+        MemoryStream ms = new MemoryStream();
+        while (true)
+        {
+            int b = stream.ReadByte();
+            if (b == -1)
+            {
+                if (ms.Length == 0) return null;
+                break;
+            }
+            if (b == '\n') break;
+            if (b != '\r') ms.WriteByte((byte)b);
+        }
+        byte[] bytes = ms.ToArray();
+        return System.Text.Encoding.UTF8.GetString(bytes);
     }
 }
