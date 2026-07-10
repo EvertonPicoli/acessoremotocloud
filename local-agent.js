@@ -396,6 +396,8 @@ let reconnectTimerInput = null;
 let stdoutBuffer = '';
 let wsClient = null;
 let isAuthenticated = false;
+let clientReadyForFrame = true;
+let lastFrameSentTime = 0;
 
 function connectFrameSocket() {
   if (reconnectTimerFrame) clearTimeout(reconnectTimerFrame);
@@ -424,8 +426,16 @@ function connectFrameSocket() {
         const base64 = trimmed.substring(6);
 
         if (wsClient && wsClient.readyState === WebSocket.OPEN && isAuthenticated) {
-          // Controle de backpressure: se o buffer do WebSocket estiver cheio, pular este frame
-          if (wsClient.bufferedAmount < 64 * 1024) {
+          const now = Date.now();
+          // Fallback: se passou mais de 2 segundos desde o último frame enviado,
+          // força a liberação caso o ACK tenha se perdido ou travado no client.
+          if (!clientReadyForFrame && now - lastFrameSentTime > 2000) {
+            clientReadyForFrame = true;
+          }
+
+          if (clientReadyForFrame) {
+            clientReadyForFrame = false;
+            lastFrameSentTime = now;
             const payload = JSON.stringify({ type: 'frame', image: base64 });
             wsClient.send(payload);
           }
@@ -528,6 +538,10 @@ function connectToCentralServer() {
           wsClient.send(JSON.stringify({ type: 'pong', time: data.time }));
         } 
         
+        else if (data.type === 'frame_ack') {
+          clientReadyForFrame = true;
+        }
+
         else if (data.type === 'input') {
           const action = data.action;
           
@@ -549,6 +563,7 @@ function connectToCentralServer() {
   wsClient.on('close', () => {
     console.log('❌ Conexão com o servidor central perdida. Tentando reconectar em 5 segundos...');
     isAuthenticated = false;
+    clientReadyForFrame = true;
     sendFrameControlToSimulator({ type: 'stop_capture' });
     setTimeout(connectToCentralServer, 5000);
   });

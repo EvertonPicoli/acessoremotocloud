@@ -303,9 +303,19 @@
             if (!remoteScreen._pendingFrame) {
               remoteScreen._pendingFrame = true;
               remoteScreen.src = 'data:image/jpeg;base64,' + raw.substring(imgStart, imgEnd);
-              // Liberar para o próximo frame após renderizar
-              remoteScreen.onload = () => { remoteScreen._pendingFrame = false; };
-              remoteScreen.onerror = () => { remoteScreen._pendingFrame = false; };
+              // Liberar para o próximo frame após renderizar e enviar confirmação (ACK) para solicitar o próximo
+              remoteScreen.onload = () => { 
+                remoteScreen._pendingFrame = false; 
+                if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                  controlWs.send(JSON.stringify({ type: 'frame_ack' }));
+                }
+              };
+              remoteScreen.onerror = () => { 
+                remoteScreen._pendingFrame = false; 
+                if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+                  controlWs.send(JSON.stringify({ type: 'frame_ack' }));
+                }
+              };
             }
           }
           return;
