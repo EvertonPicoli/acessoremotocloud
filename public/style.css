@@ -517,3 +517,67 @@ input:focus {
   font-weight: 600;
   color: #a5b4fc;
 }
+
+/* --- DESIGN RESPONSIVO --- */
+@media (max-width: 1024px) {
+  main {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .session-container {
+    flex-direction: column;
+    gap: 1rem;
+    min-height: auto;
+  }
+  .session-sidebar {
+    width: 100% !important;
+    max-height: 350px;
+  }
+}
+
+@media (max-width: 768px) {
+  header {
+    padding: 1rem;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: center;
+    text-align: center;
+  }
+  #header-title {
+    font-size: 1rem;
+  }
+  .viewport-panel {
+    min-height: 300px;
+    padding: 0.5rem;
+  }
+  .toolbar {
+    position: relative;
+    top: 0;
+    left: 0;
+    transform: none;
+    width: 100%;
+    border-radius: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+  }
+  .toolbar-item {
+    font-size: 0.75rem;
+  }
+  .toolbar .btn, .toolbar select {
+    padding: 0.35rem 0.6rem !important;
+    font-size: 0.75rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .computers-grid {
+    grid-template-columns: 1fr;
+  }
+  .computer-card {
+    padding: 1.5rem 1rem;
+  }
+}
