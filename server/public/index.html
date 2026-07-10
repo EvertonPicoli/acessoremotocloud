@@ -166,6 +166,14 @@
     let selectedAgentId = null;
     let selectedAgentName = '';
     let inputHandlersAttached = false;
+
+    // Variáveis de controle de toques em dispositivos móveis
+    let touchStartTime = 0;
+    let lastTapTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
+    let touchHasMoved = false;
+    let touchIsDragging = false;
+    let twoFingerTapDetected = false;
     
     // Variáveis de controle de throttling para reduzir a latência de input
     let mouseThrottleTimeout = null;
@@ -496,31 +504,56 @@
 
       // Suporte para Toque / Gestos (Celular e Tablet)
       remoteScreen.addEventListener('touchstart', (e) => {
-        if (e.touches.length > 0) {
+        touchHasMoved = false;
+        twoFingerTapDetected = false;
+
+        if (e.touches.length === 1) {
           const touch = e.touches[0];
-          const coords = getScaledCoords(touch.clientX, touch.clientY);
+          touchStartTime = Date.now();
+          touchStartPos = { x: touch.clientX, y: touch.clientY };
           
+          const coords = getScaledCoords(touch.clientX, touch.clientY);
           if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
-            // Primeiro posiciona o cursor
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousemove', x: coords.x, y: coords.y }
-            }));
-            // Depois clica (mousedown)
-            controlWs.send(JSON.stringify({
-              type: 'input',
-              action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
-            }));
+            // Se for um duplo toque rápido e segurar (arrastar)
+            if (Date.now() - lastTapTime < 300) {
+              touchIsDragging = true;
+              lastTapTime = 0;
+              
+              // Posiciona o cursor e clica (deixa o botão esquerdo pressionado)
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
+              }));
+              log('Iniciado arraste (double tap & hold)', 'info');
+            } else {
+              // Apenas move o cursor para o local do toque, sem clicar ainda
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: coords.x, y: coords.y }
+              }));
+            }
           }
+        } else if (e.touches.length === 2) {
+          // Detecta toque com dois dedos
+          twoFingerTapDetected = true;
+          touchStartTime = Date.now();
         }
-        e.preventDefault(); // Evita scroll do navegador ao tocar
+        e.preventDefault();
       }, { passive: false });
 
       remoteScreen.addEventListener('touchmove', (e) => {
-        if (e.touches.length > 0) {
+        if (e.touches.length === 1) {
           const touch = e.touches[0];
+          const dist = Math.hypot(touch.clientX - touchStartPos.x, touch.clientY - touchStartPos.y);
+          if (dist > 10) {
+            touchHasMoved = true;
+          }
+          
           const coords = getScaledCoords(touch.clientX, touch.clientY);
-
           if (coords) {
             throttledMouseMove(coords);
           }
@@ -529,11 +562,66 @@
       }, { passive: false });
 
       remoteScreen.addEventListener('touchend', (e) => {
-        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
-          controlWs.send(JSON.stringify({
-            type: 'input',
-            action: { type: 'mouseup', button: 0 }
-          }));
+        if (twoFingerTapDetected && e.touches.length === 0) {
+          // Toque de 2 dedos liberado -> clique com o botão direito
+          const duration = Date.now() - touchStartTime;
+          if (duration < 300) {
+            const coords = getScaledCoords(touchStartPos.x, touchStartPos.y);
+            if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+              // Posiciona, clica botão direito (2) e solta
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousemove', x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mousedown', button: 2, x: coords.x, y: coords.y }
+              }));
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 2, x: coords.x, y: coords.y }
+              }));
+              log('Clique com botão direito (dois dedos)', 'info');
+            }
+          }
+          twoFingerTapDetected = false;
+        } else if (e.touches.length === 0) {
+          // Soltou o único dedo
+          if (touchIsDragging) {
+            // Solta o arraste
+            if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+              controlWs.send(JSON.stringify({
+                type: 'input',
+                action: { type: 'mouseup', button: 0 }
+              }));
+            }
+            touchIsDragging = false;
+            log('Arraste finalizado', 'info');
+          } else if (!touchHasMoved) {
+            // Toque rápido sem mover -> Clique Esquerdo
+            const duration = Date.now() - touchStartTime;
+            if (duration < 250) {
+              const coords = getScaledCoords(touchStartPos.x, touchStartPos.y);
+              if (coords && controlWs && controlWs.readyState === WebSocket.OPEN) {
+                // Clique rápido
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mousedown', button: 0, x: coords.x, y: coords.y }
+                }));
+                controlWs.send(JSON.stringify({
+                  type: 'input',
+                  action: { type: 'mouseup', button: 0, x: coords.x, y: coords.y }
+                }));
+                
+                if (Date.now() - lastTapTime < 300) {
+                  log('Duplo clique esquerdo (dois toques rápidos)', 'info');
+                  lastTapTime = 0;
+                } else {
+                  lastTapTime = Date.now();
+                }
+              }
+            }
+          }
         }
         e.preventDefault();
       }, { passive: false });
