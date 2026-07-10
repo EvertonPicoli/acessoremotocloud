@@ -419,12 +419,13 @@ function closePeerConnection() {
 }
 
 let cachedI420Frame = null;
+let cachedRgbaFrame = null;
 
 function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
   // Envia frame apenas se houver conexão ativa estabelecida
   if (peerConnection && peerConnection.connectionState === 'connected') {
     try {
-      // Re-aloca ou cria o buffer cacheado se a resolução mudar ou for a primeira execução
+      // Re-aloca ou cria o buffer I420 cacheado se a resolução mudar ou for a primeira execução
       if (!cachedI420Frame || cachedI420Frame.width !== width || cachedI420Frame.height !== height) {
         cachedI420Frame = {
           width: width,
@@ -433,18 +434,20 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         };
       }
 
-      // Cria uma cópia com ArrayBuffer exclusivo do tamanho exato da imagem
-      // Isso evita expor o buffer compartilhado do pool do Node (que continha o offset do cabeçalho)
-      const rgbaData = new Uint8ClampedArray(rgbaBuffer);
+      // Re-aloca ou cria o buffer RGBA cacheado (com ArrayBuffer exclusivo do tamanho exato da imagem)
+      if (!cachedRgbaFrame || cachedRgbaFrame.width !== width || cachedRgbaFrame.height !== height) {
+        cachedRgbaFrame = {
+          width: width,
+          height: height,
+          data: new Uint8ClampedArray(width * height * 4)
+        };
+      }
 
-      const rgbaFrame = {
-        width: width,
-        height: height,
-        data: rgbaData
-      };
+      // Copia ultra-rápida na memória cacheada preexistente (0 alocações adicionais no loop)
+      cachedRgbaFrame.data.set(rgbaBuffer);
 
       // Realiza a conversão de RGBA para I420 in-place na memória cacheada
-      rgbaToI420(rgbaFrame, cachedI420Frame);
+      rgbaToI420(cachedRgbaFrame, cachedI420Frame);
 
       // Injeta o frame I420 convertido no WebRTC
       videoSource.onFrame(cachedI420Frame);
