@@ -33,6 +33,35 @@ class InputSimulator
     [DllImport("user32.dll")]
     static extern bool SetCursorPos(int X, int Y);
 
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern IntPtr GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+    const int STD_INPUT_HANDLE = -10;
+    const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+    const uint ENABLE_EXTENDED_FLAGS = 0x0080;
+
+    static void DisableQuickEdit()
+    {
+        try
+        {
+            IntPtr conIn = GetStdHandle(STD_INPUT_HANDLE);
+            uint mode;
+            if (GetConsoleMode(conIn, out mode))
+            {
+                mode &= ~ENABLE_QUICK_EDIT_MODE;
+                mode |= ENABLE_EXTENDED_FLAGS;
+                SetConsoleMode(conIn, mode);
+            }
+        }
+        catch {}
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     struct CURSORINFO
     {
@@ -207,6 +236,7 @@ class InputSimulator
 
     static void Main()
     {
+        DisableQuickEdit();
         try { SetProcessDPIAware(); } catch {}
         try
         {

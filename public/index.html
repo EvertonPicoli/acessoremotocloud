@@ -137,6 +137,13 @@
     let computerName = '';
     let inputHandlersAttached = false;
 
+    // Variáveis de controle de throttling e feedback loop para reduzir a latência de input
+    let mouseThrottleTimeout = null;
+    let lastMouseMoveTime = 0;
+    const THROTTLE_MS = 40; // ~25 transmissões por segundo
+    let pendingMoveCoords = null;
+    let activeButtons = {};
+
     function log(message, type = 'info') {
       const entry = document.createElement('div');
       entry.className = `log-entry ${type}`;
@@ -200,6 +207,9 @@
             remoteScreen.style.display = 'block';
             toolbar.style.display = 'flex';
 
+            // Inicializa flag de frame pendente
+            remoteScreen._pendingFrame = false;
+
             startPing();
             setupInputHandlers();
             break;
@@ -212,8 +222,18 @@
             break;
 
           case 'frame':
-            // Recebe o screenshot em base64 e atualiza
-            remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
+            // Recebe o screenshot em base64 e atualiza usando requestAnimationFrame para controle de backpressure
+            if (!remoteScreen._pendingFrame) {
+              remoteScreen._pendingFrame = true;
+              remoteScreen.src = 'data:image/jpeg;base64,' + data.image;
+              
+              requestAnimationFrame(() => {
+                remoteScreen._pendingFrame = false;
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                  ws.send(JSON.stringify({ type: 'frame_ack' }));
+                }
+              });
+            }
             break;
 
           case 'pong':
@@ -256,12 +276,8 @@
       if (inputHandlersAttached) return;
       inputHandlersAttached = true;
 
-      remoteScreen.addEventListener('mousemove', (e) => {
+      function sendMouseMove(x, y) {
         if (ws && ws.readyState === WebSocket.OPEN) {
-          const rect = remoteScreen.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
-
           ws.send(JSON.stringify({
             type: 'input',
             action: {
@@ -271,33 +287,89 @@
             }
           }));
         }
+      }
+
+      function throttledMouseMove(x, y) {
+        const now = Date.now();
+        pendingMoveCoords = { x, y };
+
+        if (now - lastMouseMoveTime >= THROTTLE_MS) {
+          if (mouseThrottleTimeout) {
+            clearTimeout(mouseThrottleTimeout);
+            mouseThrottleTimeout = null;
+          }
+          sendMouseMove(x, y);
+          lastMouseMoveTime = now;
+        } else {
+          if (!mouseThrottleTimeout) {
+            mouseThrottleTimeout = setTimeout(() => {
+              if (pendingMoveCoords) {
+                sendMouseMove(pendingMoveCoords.x, pendingMoveCoords.y);
+                lastMouseMoveTime = Date.now();
+                pendingMoveCoords = null;
+              }
+              mouseThrottleTimeout = null;
+            }, THROTTLE_MS - (now - lastMouseMoveTime));
+          }
+        }
+      }
+
+      remoteScreen.addEventListener('mousemove', (e) => {
+        const rect = remoteScreen.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
+        if (x >= 0 && x <= 1 && y >= 0 && y <= 1) {
+          throttledMouseMove(x, y);
+        }
       });
 
       remoteScreen.addEventListener('mousedown', (e) => {
+        if (activeButtons[e.button]) return; // Evita loop de feedback infinito local
+        activeButtons[e.button] = true;
+
         if (ws && ws.readyState === WebSocket.OPEN) {
+          const rect = remoteScreen.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+
           ws.send(JSON.stringify({
             type: 'input',
             action: {
               type: 'mousedown',
-              button: e.button
+              button: e.button,
+              x: x,
+              y: y
             }
           }));
         }
       });
 
       remoteScreen.addEventListener('mouseup', (e) => {
+        activeButtons[e.button] = false;
+
         if (ws && ws.readyState === WebSocket.OPEN) {
+          const rect = remoteScreen.getBoundingClientRect();
+          const x = (e.clientX - rect.left) / rect.width;
+          const y = (e.clientY - rect.top) / rect.height;
+
           ws.send(JSON.stringify({
             type: 'input',
             action: {
               type: 'mouseup',
-              button: e.button
+              button: e.button,
+              x: x,
+              y: y
             }
           }));
         }
       });
 
       remoteScreen.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
+
+      // Impede o arraste nativo da imagem <img> no navegador
+      remoteScreen.addEventListener('dragstart', (e) => {
         e.preventDefault();
       });
 
@@ -338,6 +410,15 @@
         clearInterval(pingInterval);
         pingInterval = null;
       }
+
+      if (mouseThrottleTimeout) {
+        clearTimeout(mouseThrottleTimeout);
+        mouseThrottleTimeout = null;
+      }
+      lastMouseMoveTime = 0;
+      pendingMoveCoords = null;
+      activeButtons = {};
+      remoteScreen._pendingFrame = false;
 
       remoteScreen.src = '';
       remoteScreen.style.display = 'none';
