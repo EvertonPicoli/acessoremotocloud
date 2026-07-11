@@ -164,6 +164,11 @@ class InputSimulator
         LogToFile("CaptureLoop thread iniciada.");
         int lastLoggedIndex = -1;
         
+        byte[] rgbBuffer = null;
+        byte[] prevRgbBuffer = null;
+        bool firstFrame = true;
+        DateTime lastFrameTime = DateTime.MinValue;
+        
         while (isCapturing)
         {
             try
@@ -247,59 +252,90 @@ class InputSimulator
 
                         IntPtr ptr = bmpData.Scan0;
                         int bytesCount = Math.Abs(bmpData.Stride) * destHeight;
-                        byte[] rgbValues = new byte[bytesCount];
+                        
+                        if (rgbBuffer == null || rgbBuffer.Length != bytesCount)
+                        {
+                            rgbBuffer = new byte[bytesCount];
+                            prevRgbBuffer = new byte[bytesCount];
+                            firstFrame = true;
+                        }
 
                         // Copia memória direta do Bitmap para o array
-                        System.Runtime.InteropServices.Marshal.Copy(ptr, rgbValues, 0, bytesCount);
+                        System.Runtime.InteropServices.Marshal.Copy(ptr, rgbBuffer, 0, bytesCount);
                         scaledBmp.UnlockBits(bmpData);
 
                         // Converte formato da memória do Bitmap GDI (BGRA) para RGBA exigido pelo WebRTC
+                        // E detecta se há alterações em relação ao buffer anterior
+                        bool hasChanges = firstFrame || (DateTime.Now - lastFrameTime).TotalMilliseconds >= 1000;
+                        
                         for (int i = 0; i < bytesCount; i += 4)
                         {
-                            byte blue = rgbValues[i];
-                            rgbValues[i] = rgbValues[i + 2]; // Copia Vermelho para o slot do Azul
-                            rgbValues[i + 2] = blue;         // Copia Azul para o slot do Vermelho
-                            rgbValues[i + 3] = 255;          // Garante opacidade total
-                        }
+                            byte blue = rgbBuffer[i];
+                            byte green = rgbBuffer[i + 1];
+                            byte red = rgbBuffer[i + 2];
+                            byte alpha = 255;
 
-                        if (tcpStream != null)
-                        {
-                            try
+                            // Atualiza para RGBA
+                            rgbBuffer[i] = red;
+                            rgbBuffer[i + 2] = blue;
+                            rgbBuffer[i + 3] = alpha;
+
+                            if (!hasChanges)
                             {
-                                byte[] header = new byte[16];
-                                
-                                // Magic: 'F', 'R', 'M', 'E'
-                                header[0] = 0x46;
-                                header[1] = 0x52;
-                                header[2] = 0x4D;
-                                header[3] = 0x45;
-                                
-                                // Width (Little Endian)
-                                header[4] = (byte)(destWidth & 0xFF);
-                                header[5] = (byte)((destWidth >> 8) & 0xFF);
-                                header[6] = (byte)((destWidth >> 16) & 0xFF);
-                                header[7] = (byte)((destWidth >> 24) & 0xFF);
-                                
-                                // Height (Little Endian)
-                                header[8] = (byte)(destHeight & 0xFF);
-                                header[9] = (byte)((destHeight >> 8) & 0xFF);
-                                header[10] = (byte)((destHeight >> 16) & 0xFF);
-                                header[11] = (byte)((destHeight >> 24) & 0xFF);
-                                
-                                // PayloadSize (Little Endian)
-                                header[12] = (byte)(bytesCount & 0xFF);
-                                header[13] = (byte)((bytesCount >> 8) & 0xFF);
-                                header[14] = (byte)((bytesCount >> 16) & 0xFF);
-                                	header[15] = (byte)((bytesCount >> 24) & 0xFF);
-
-                                lock (tcpStream)
+                                if (red != prevRgbBuffer[i] ||
+                                    green != prevRgbBuffer[i + 1] ||
+                                    blue != prevRgbBuffer[i + 2])
                                 {
-                                    tcpStream.Write(header, 0, 16);
-                                    tcpStream.Write(rgbValues, 0, bytesCount);
-                                    tcpStream.Flush();
+                                    hasChanges = true;
                                 }
                             }
-                            catch {}
+                        }
+
+                        if (hasChanges)
+                        {
+                            Buffer.BlockCopy(rgbBuffer, 0, prevRgbBuffer, 0, bytesCount);
+                            firstFrame = false;
+                            lastFrameTime = DateTime.Now;
+
+                            if (tcpStream != null)
+                            {
+                                try
+                                {
+                                    byte[] header = new byte[16];
+                                    
+                                    // Magic: 'F', 'R', 'M', 'E'
+                                    header[0] = 0x46;
+                                    header[1] = 0x52;
+                                    header[2] = 0x4D;
+                                    header[3] = 0x45;
+                                    
+                                    // Width (Little Endian)
+                                    header[4] = (byte)(destWidth & 0xFF);
+                                    header[5] = (byte)((destWidth >> 8) & 0xFF);
+                                    header[6] = (byte)((destWidth >> 16) & 0xFF);
+                                    header[7] = (byte)((destWidth >> 24) & 0xFF);
+                                    
+                                    // Height (Little Endian)
+                                    header[8] = (byte)(destHeight & 0xFF);
+                                    header[9] = (byte)((destHeight >> 8) & 0xFF);
+                                    header[10] = (byte)((destHeight >> 16) & 0xFF);
+                                    header[11] = (byte)((destHeight >> 24) & 0xFF);
+                                    
+                                    // PayloadSize (Little Endian)
+                                    header[12] = (byte)(bytesCount & 0xFF);
+                                    header[13] = (byte)((bytesCount >> 8) & 0xFF);
+                                    header[14] = (byte)((bytesCount >> 16) & 0xFF);
+                                    header[15] = (byte)((bytesCount >> 24) & 0xFF);
+
+                                    lock (tcpStream)
+                                    {
+                                        tcpStream.Write(header, 0, 16);
+                                        tcpStream.Write(rgbBuffer, 0, bytesCount);
+                                        tcpStream.Flush();
+                                    }
+                                }
+                                catch {}
+                            }
                         }
                     }
                 }
@@ -308,7 +344,7 @@ class InputSimulator
             {
                 Console.Error.WriteLine("Error capturing screen: " + ex.Message);
             }
-            System.Threading.Thread.Sleep(100); // ~10 FPS
+            System.Threading.Thread.Sleep(33); // ~30 FPS
         }
     }
 
@@ -380,37 +416,40 @@ class InputSimulator
                     {
                         tcpStream = stream;
                         Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de FRAMES");
-                        string line;
-                        while ((line = ReadLine(stream)) != null)
+                        using (StreamReader reader = new StreamReader(stream, System.Text.Encoding.UTF8))
                         {
-                            try
+                            string line;
+                            while ((line = reader.ReadLine()) != null)
                             {
-                                Match typeMatch = typeRegex.Match(line);
-                                if (!typeMatch.Success) continue;
-                                string type = typeMatch.Groups[1].Value;
-                                LogToFile("Recebido comando de frames: " + line);
+                                try
+                                {
+                                    Match typeMatch = typeRegex.Match(line);
+                                    if (!typeMatch.Success) continue;
+                                    string type = typeMatch.Groups[1].Value;
+                                    LogToFile("Recebido comando de frames: " + line);
 
-                                if (type == "start_capture")
-                                {
-                                    StartCapture();
-                                }
-                                else if (type == "stop_capture")
-                                {
-                                    StopCapture();
-                                }
-                                else if (type == "select_screen")
-                                {
-                                    Regex indexRegex = new Regex("\"index\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
-                                    Match indexMatch = indexRegex.Match(line);
-                                    if (indexMatch.Success)
+                                    if (type == "start_capture")
                                     {
-                                        int index = int.Parse(indexMatch.Groups[1].Value);
-                                        LogToAgent("[Simulator] Mudando para tela indice: " + index);
-                                        selectedScreenIndex = index;
+                                        StartCapture();
+                                    }
+                                    else if (type == "stop_capture")
+                                    {
+                                        StopCapture();
+                                    }
+                                    else if (type == "select_screen")
+                                    {
+                                        Regex indexRegex = new Regex("\"index\"\\s*:\\s*([0-9]+)", RegexOptions.Compiled);
+                                        Match indexMatch = indexRegex.Match(line);
+                                        if (indexMatch.Success)
+                                        {
+                                            int index = int.Parse(indexMatch.Groups[1].Value);
+                                            LogToAgent("[Simulator] Mudando para tela indice: " + index);
+                                            selectedScreenIndex = index;
+                                        }
                                     }
                                 }
+                                catch {}
                             }
-                            catch {}
                         }
                         tcpStream = null;
                     }
@@ -451,99 +490,84 @@ class InputSimulator
                     using (NetworkStream stream = client.GetStream())
                     {
                         Console.WriteLine("[Simulator] Agente Node.js conectado no canal TCP de INPUTS");
-                        string line;
-                        while ((line = ReadLine(stream)) != null)
+                        using (StreamReader reader = new StreamReader(stream, System.Text.Encoding.UTF8))
                         {
-                            try
+                            string line;
+                            while ((line = reader.ReadLine()) != null)
                             {
-                                Match typeMatch = typeRegex.Match(line);
-                                if (!typeMatch.Success) continue;
-                                string type = typeMatch.Groups[1].Value;
+                                try
+                                {
+                                    Match typeMatch = typeRegex.Match(line);
+                                    if (!typeMatch.Success) continue;
+                                    string type = typeMatch.Groups[1].Value;
 
-                                if (type == "mousemove")
-                                {
-                                    Match xMatch = xRegex.Match(line);
-                                    Match yMatch = yRegex.Match(line);
-                                    if (xMatch.Success && yMatch.Success)
+                                    if (type == "mousemove")
                                     {
-                                        int x = int.Parse(xMatch.Groups[1].Value);
-                                        int y = int.Parse(yMatch.Groups[1].Value);
-                                        SetCursorPos(x, y);
+                                        Match xMatch = xRegex.Match(line);
+                                        Match yMatch = yRegex.Match(line);
+                                        if (xMatch.Success && yMatch.Success)
+                                        {
+                                            int x = int.Parse(xMatch.Groups[1].Value);
+                                            int y = int.Parse(yMatch.Groups[1].Value);
+                                            SetCursorPos(x, y);
+                                        }
                                     }
-                                }
-                                else if (type == "mousedown")
-                                {
-                                    Match btnMatch = buttonRegex.Match(line);
-                                    if (btnMatch.Success)
+                                    else if (type == "mousedown")
                                     {
-                                        int button = int.Parse(btnMatch.Groups[1].Value);
-                                        uint flags = 0;
-                                        if (button == 0) flags = MOUSEEVENTF_LEFTDOWN;
-                                        else if (button == 2) flags = MOUSEEVENTF_RIGHTDOWN;
-                                        else if (button == 1) flags = MOUSEEVENTF_MIDDLEDOWN;
+                                        Match btnMatch = buttonRegex.Match(line);
+                                        if (btnMatch.Success)
+                                        {
+                                            int button = int.Parse(btnMatch.Groups[1].Value);
+                                            uint flags = 0;
+                                            if (button == 0) flags = MOUSEEVENTF_LEFTDOWN;
+                                            else if (button == 2) flags = MOUSEEVENTF_RIGHTDOWN;
+                                            else if (button == 1) flags = MOUSEEVENTF_MIDDLEDOWN;
 
-                                        mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                            mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                        }
                                     }
-                                }
-                                else if (type == "mouseup")
-                                {
-                                    Match btnMatch = buttonRegex.Match(line);
-                                    if (btnMatch.Success)
+                                    else if (type == "mouseup")
                                     {
-                                        int button = int.Parse(btnMatch.Groups[1].Value);
-                                        uint flags = 0;
-                                        if (button == 0) flags = MOUSEEVENTF_LEFTUP;
-                                        else if (button == 2) flags = MOUSEEVENTF_RIGHTUP;
-                                        else if (button == 1) flags = MOUSEEVENTF_MIDDLEUP;
+                                        Match btnMatch = buttonRegex.Match(line);
+                                        if (btnMatch.Success)
+                                        {
+                                            int button = int.Parse(btnMatch.Groups[1].Value);
+                                            uint flags = 0;
+                                            if (button == 0) flags = MOUSEEVENTF_LEFTUP;
+                                            else if (button == 2) flags = MOUSEEVENTF_RIGHTUP;
+                                            else if (button == 1) flags = MOUSEEVENTF_MIDDLEUP;
 
-                                        mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                            mouse_event(flags, 0, 0, 0, IntPtr.Zero);
+                                        }
                                     }
-                                }
-                                else if (type == "keydown")
-                                {
-                                    Match vkMatch = vkRegex.Match(line);
-                                    if (vkMatch.Success)
+                                    else if (type == "keydown")
                                     {
-                                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                                        byte scanCode = (byte)MapVirtualKey(vk, 0);
-                                        keybd_event((byte)vk, scanCode, KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                        Match vkMatch = vkRegex.Match(line);
+                                        if (vkMatch.Success)
+                                        {
+                                            ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                            byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                            keybd_event((byte)vk, scanCode, KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                        }
                                     }
-                                }
-                                else if (type == "keyup")
-                                {
-                                    Match vkMatch = vkRegex.Match(line);
-                                    if (vkMatch.Success)
+                                    else if (type == "keyup")
                                     {
-                                        ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
-                                        byte scanCode = (byte)MapVirtualKey(vk, 0);
-                                        keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
+                                        Match vkMatch = vkRegex.Match(line);
+                                        if (vkMatch.Success)
+                                        {
+                                            ushort vk = ushort.Parse(vkMatch.Groups[1].Value);
+                                            byte scanCode = (byte)MapVirtualKey(vk, 0);
+                                            keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
+                                        }
                                     }
                                 }
+                                catch {}
                             }
-                            catch {}
                         }
                     }
                 }
             }
             catch {}
         }
-    }
-
-    static string ReadLine(NetworkStream stream)
-    {
-        MemoryStream ms = new MemoryStream();
-        while (true)
-        {
-            int b = stream.ReadByte();
-            if (b == -1)
-            {
-                if (ms.Length == 0) return null;
-                break;
-            }
-            if (b == '\n') break;
-            if (b != '\r') ms.WriteByte((byte)b);
-        }
-        byte[] bytes = ms.ToArray();
-        return System.Text.Encoding.UTF8.GetString(bytes);
     }
 }

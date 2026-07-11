@@ -225,7 +225,7 @@
     // Variáveis de controle de throttling para reduzir a latência de input
     let mouseThrottleTimeout = null;
     let lastMouseMoveTime = 0;
-    const THROTTLE_MS = 40; // ~25 transmissões por segundo
+    const THROTTLE_MS = 20; // ~50 transmissões por segundo
     let pendingMoveCoords = null;
     
     // Rastreia os botões do mouse atualmente pressionados para evitar feedback loop em testes locais
