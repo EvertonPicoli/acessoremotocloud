@@ -192,8 +192,8 @@ class InputSimulator
                 int screenY = screen.Bounds.Y;
                 
                 double scale = 1.0;
-                if (width > 1280) {
-                    scale = 1280.0 / width;
+                if (width > 1920) {
+                    scale = 1920.0 / width;
                 }
                 int destWidth = (int)(width * scale);
                 int destHeight = (int)(height * scale);
@@ -268,31 +268,41 @@ class InputSimulator
                         // E detecta se há alterações em relação ao buffer anterior
                         bool hasChanges = firstFrame || (DateTime.Now - lastFrameTime).TotalMilliseconds >= 1000;
                         
-                        for (int i = 0; i < bytesCount; i += 4)
+                        if (!hasChanges)
                         {
-                            byte blue = rgbBuffer[i];
-                            byte green = rgbBuffer[i + 1];
-                            byte red = rgbBuffer[i + 2];
-                            byte alpha = 255;
-
-                            // Atualiza para RGBA
-                            rgbBuffer[i] = red;
-                            rgbBuffer[i + 2] = blue;
-                            rgbBuffer[i + 3] = alpha;
-
-                            if (!hasChanges)
+                            for (int i = 0; i < bytesCount; i += 4)
                             {
-                                if (red != prevRgbBuffer[i] ||
-                                    green != prevRgbBuffer[i + 1] ||
-                                    blue != prevRgbBuffer[i + 2])
+                                // rgbBuffer is BGRA (from GDI). prevRgbBuffer is RGBA (after our swap).
+                                // Compare:
+                                // rgbBuffer[i] (Blue) with prevRgbBuffer[i + 2] (Blue)
+                                // rgbBuffer[i + 1] (Green) with prevRgbBuffer[i + 1] (Green)
+                                // rgbBuffer[i + 2] (Red) with prevRgbBuffer[i] (Red)
+                                if (rgbBuffer[i] != prevRgbBuffer[i + 2] ||
+                                    rgbBuffer[i + 1] != prevRgbBuffer[i + 1] ||
+                                    rgbBuffer[i + 2] != prevRgbBuffer[i])
                                 {
                                     hasChanges = true;
+                                    break;
                                 }
                             }
                         }
 
                         if (hasChanges)
                         {
+                            for (int i = 0; i < bytesCount; i += 4)
+                            {
+                                byte blue = rgbBuffer[i];
+                                byte green = rgbBuffer[i + 1];
+                                byte red = rgbBuffer[i + 2];
+                                byte alpha = 255;
+
+                                // Atualiza para RGBA
+                                rgbBuffer[i] = red;
+                                rgbBuffer[i + 1] = green;
+                                rgbBuffer[i + 2] = blue;
+                                rgbBuffer[i + 3] = alpha;
+                            }
+
                             Buffer.BlockCopy(rgbBuffer, 0, prevRgbBuffer, 0, bytesCount);
                             firstFrame = false;
                             lastFrameTime = DateTime.Now;
@@ -344,7 +354,7 @@ class InputSimulator
             {
                 Console.Error.WriteLine("Error capturing screen: " + ex.Message);
             }
-            System.Threading.Thread.Sleep(33); // ~30 FPS
+            System.Threading.Thread.Sleep(16); // ~60 FPS
         }
     }
 

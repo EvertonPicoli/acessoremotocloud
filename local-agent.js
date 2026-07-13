@@ -670,7 +670,19 @@ function connectToCentralServer() {
           });
 
           // Adiciona a faixa de vídeo capturada do C# ao WebRTC associada ao stream
-          peerConnection.addTrack(videoTrack, mediaStream);
+          const sender = peerConnection.addTrack(videoTrack, mediaStream);
+          try {
+            const parameters = sender.getParameters();
+            if (!parameters.encodings) {
+              parameters.encodings = [{}];
+            }
+            parameters.degradationPreference = 'maintain-resolution';
+            sender.setParameters(parameters).catch(err => {
+              console.warn('Não foi possível setar degradationPreference no sender:', err.message);
+            });
+          } catch (e) {
+            console.warn('Erro ao configurar RTCRtpSender:', e.message);
+          }
 
           peerConnection.onicecandidate = (event) => {
             if (event.candidate && wsClient && wsClient.readyState === WebSocket.OPEN) {
