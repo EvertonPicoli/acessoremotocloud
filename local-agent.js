@@ -454,7 +454,8 @@ try {
 const mediaStream = new wrtc.MediaStream();
 mediaStream.addTrack(videoTrack);
 let peerConnection = null;
-let tcpBuffer = Buffer.alloc(0);
+let tcpBuffer = Buffer.alloc(10 * 1024 * 1024); // 10MB pre-allocated buffer
+let tcpBufferOffset = 0; // current write pointer
 
 function closePeerConnection() {
   if (peerConnection) {
@@ -481,7 +482,6 @@ function closePeerConnection() {
 }
 
 let cachedI420Frame = null;
-let cachedRgbaFrame = null;
 
 function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
   // Envia frame apenas se houver conexão ativa estabelecida
@@ -496,20 +496,15 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         };
       }
 
-      // Re-aloca ou cria o buffer RGBA cacheado (com ArrayBuffer exclusivo do tamanho exato da imagem)
-      if (!cachedRgbaFrame || cachedRgbaFrame.width !== width || cachedRgbaFrame.height !== height) {
-        cachedRgbaFrame = {
-          width: width,
-          height: height,
-          data: new Uint8ClampedArray(width * height * 4)
-        };
-      }
-
-      // Copia ultra-rápida na memória cacheada preexistente (0 alocações adicionais no loop)
-      cachedRgbaFrame.data.set(rgbaBuffer);
+      // Evita cópias desnecessárias usando o rgbaBuffer (Node.js Buffer) diretamente
+      const rgbaFrame = {
+        width: width,
+        height: height,
+        data: rgbaBuffer
+      };
 
       // Realiza a conversão de RGBA para I420 in-place na memória cacheada
-      rgbaToI420(cachedRgbaFrame, cachedI420Frame);
+      rgbaToI420(rgbaFrame, cachedI420Frame);
 
       // Injeta o frame I420 convertido no WebRTC
       videoSource.onFrame(cachedI420Frame);
@@ -536,20 +531,29 @@ function connectFrameSocket() {
   });
 
   tcpSocketFrame.on('data', (chunk) => {
-    tcpBuffer = Buffer.concat([tcpBuffer, chunk]);
+    // Se o chunk não couber, redimensiona o buffer
+    if (tcpBufferOffset + chunk.length > tcpBuffer.length) {
+      const newSize = Math.max(tcpBuffer.length * 2, tcpBufferOffset + chunk.length);
+      const newBuffer = Buffer.alloc(newSize);
+      tcpBuffer.copy(newBuffer, 0, 0, tcpBufferOffset);
+      tcpBuffer = newBuffer;
+    }
+    chunk.copy(tcpBuffer, tcpBufferOffset);
+    tcpBufferOffset += chunk.length;
 
-    while (tcpBuffer.length >= 16) {
-      const magic = tcpBuffer.toString('utf8', 0, 4);
-      const width = tcpBuffer.readInt32LE(4);
-      const height = tcpBuffer.readInt32LE(8);
-      const payloadSize = tcpBuffer.readInt32LE(12);
+    let readOffset = 0;
+    while (tcpBufferOffset - readOffset >= 16) {
+      const magic = tcpBuffer.toString('utf8', readOffset, readOffset + 4);
+      const width = tcpBuffer.readInt32LE(readOffset + 4);
+      const height = tcpBuffer.readInt32LE(readOffset + 8);
+      const payloadSize = tcpBuffer.readInt32LE(readOffset + 12);
 
-      if (tcpBuffer.length < 16 + payloadSize) {
+      if (tcpBufferOffset - readOffset < 16 + payloadSize) {
         break; // Aguarda mais dados do payload
       }
 
-      const payload = tcpBuffer.slice(16, 16 + payloadSize);
-      tcpBuffer = tcpBuffer.slice(16 + payloadSize);
+      // Usa subarray para evitar cópias caras de buffer
+      const payload = tcpBuffer.subarray(readOffset + 16, readOffset + 16 + payloadSize);
 
       if (magic === 'FRME') {
         handleIncomingRgbaFrame(width, height, payload);
@@ -558,8 +562,21 @@ function connectFrameSocket() {
         console.log(`[InputSimulator]: ${message}`);
       } else {
         console.error(`[InputSimulator] Protocolo corrompido, magic inválido: ${magic}`);
-        tcpBuffer = Buffer.alloc(0);
+        tcpBufferOffset = 0;
+        readOffset = 0;
         break;
+      }
+
+      readOffset += 16 + payloadSize;
+    }
+
+    // Move os dados restantes para o início do buffer
+    if (readOffset > 0) {
+      if (readOffset < tcpBufferOffset) {
+        tcpBuffer.copy(tcpBuffer, 0, readOffset, tcpBufferOffset);
+        tcpBufferOffset -= readOffset;
+      } else {
+        tcpBufferOffset = 0;
       }
     }
   });

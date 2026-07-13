@@ -192,8 +192,8 @@ class InputSimulator
                 int screenY = screen.Bounds.Y;
                 
                 double scale = 1.0;
-                if (width > 1920) {
-                    scale = 1920.0 / width;
+                if (width > 1600) {
+                    scale = 1600.0 / width;
                 }
                 int destWidth = (int)(width * scale);
                 int destHeight = (int)(height * scale);
@@ -354,7 +354,7 @@ class InputSimulator
             {
                 Console.Error.WriteLine("Error capturing screen: " + ex.Message);
             }
-            System.Threading.Thread.Sleep(16); // ~60 FPS
+            System.Threading.Thread.Sleep(25); // ~40 FPS
         }
     }
 
