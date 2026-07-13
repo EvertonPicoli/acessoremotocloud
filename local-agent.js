@@ -663,6 +663,7 @@ function connectToCentralServer() {
 
           peerConnection = new wrtc.RTCPeerConnection({
             iceServers: [
+              { urls: 'stun:stun.cloudflare.com:3478' },
               { urls: 'stun:stun.l.google.com:19302' },
               { urls: 'stun:stun1.l.google.com:19302' }
             ]

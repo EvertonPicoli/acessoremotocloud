@@ -906,6 +906,7 @@
 
       pc = new RTCPeerConnection({
         iceServers: [
+          { urls: 'stun:stun.cloudflare.com:3478' },
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' }
         ]
@@ -925,6 +926,19 @@
             console.warn('Não foi possível definir contentHint na track de vídeo remota:', e);
           }
         }
+        
+        // Remove o delay de buffer de jitter no navegador do cliente para visualização imediata
+        try {
+          const receivers = pc.getReceivers();
+          receivers.forEach(receiver => {
+            if (receiver.track && receiver.track.kind === 'video') {
+              receiver.playoutDelayHint = 0;
+            }
+          });
+        } catch (e) {
+          console.warn('Não foi possível configurar playoutDelayHint:', e);
+        }
+
         remoteScreen.srcObject = stream;
         
         // Garante que o elemento de vídeo dê play
