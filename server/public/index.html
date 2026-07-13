@@ -918,6 +918,13 @@
         if (!stream) {
           stream = new MediaStream([event.track]);
         }
+        if (event.track) {
+          try {
+            event.track.contentHint = 'detail';
+          } catch (e) {
+            console.warn('Não foi possível definir contentHint na track de vídeo remota:', e);
+          }
+        }
         remoteScreen.srcObject = stream;
         
         // Garante que o elemento de vídeo dê play

@@ -446,6 +446,11 @@ const { RTCVideoSource, rgbaToI420 } = wrtc.nonstandard;
 
 const videoSource = new RTCVideoSource();
 const videoTrack = videoSource.createTrack();
+try {
+  videoTrack.contentHint = 'detail';
+} catch (e) {
+  console.warn('Não foi possível definir contentHint no videoTrack:', e.message);
+}
 const mediaStream = new wrtc.MediaStream();
 mediaStream.addTrack(videoTrack);
 let peerConnection = null;
