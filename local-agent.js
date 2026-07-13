@@ -482,6 +482,7 @@ function closePeerConnection() {
 }
 
 let cachedI420Frame = null;
+let cachedRgbaFrame = null;
 
 function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
   // Envia frame apenas se houver conexão ativa estabelecida
@@ -496,11 +497,16 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         };
       }
 
-      // Evita cópias desnecessárias usando o rgbaBuffer (Node.js Buffer) diretamente
+      const payloadSize = rgbaBuffer.length;
+      if (!cachedRgbaFrame || cachedRgbaFrame.length !== payloadSize) {
+        cachedRgbaFrame = Buffer.alloc(payloadSize);
+      }
+      rgbaBuffer.copy(cachedRgbaFrame);
+
       const rgbaFrame = {
         width: width,
         height: height,
-        data: rgbaBuffer
+        data: cachedRgbaFrame
       };
 
       // Realiza a conversão de RGBA para I420 in-place na memória cacheada
