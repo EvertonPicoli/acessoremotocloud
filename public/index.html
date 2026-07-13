@@ -137,6 +137,7 @@
     let computerName = '';
     let inputHandlersAttached = false;
     let pc = null; // RTCPeerConnection para WebRTC
+    let inputChannel = null; // RTCDataChannel para inputs P2P
 
     // Variáveis de controle de throttling e feedback loop para reduzir a latência de input
     let mouseThrottleTimeout = null;
@@ -286,17 +287,29 @@
       if (inputHandlersAttached) return;
       inputHandlersAttached = true;
 
-      function sendMouseMove(x, y) {
+      function sendControlAction(action) {
+        if (inputChannel && inputChannel.readyState === 'open') {
+          try {
+            inputChannel.send(JSON.stringify(action));
+            return;
+          } catch (e) {
+            console.warn("Erro ao enviar pelo DataChannel, tentando WebSocket:", e);
+          }
+        }
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'input',
-            action: {
-              type: 'mousemove',
-              x: x,
-              y: y
-            }
+            action: action
           }));
         }
+      }
+
+      function sendMouseMove(x, y) {
+        sendControlAction({
+          type: 'mousemove',
+          x: x,
+          y: y
+        });
       }
 
       function throttledMouseMove(x, y) {
@@ -337,41 +350,31 @@
         if (activeButtons[e.button]) return; // Evita loop de feedback infinito local
         activeButtons[e.button] = true;
 
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          const rect = remoteScreen.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
+        const rect = remoteScreen.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
 
-          ws.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'mousedown',
-              button: e.button,
-              x: x,
-              y: y
-            }
-          }));
-        }
+        sendControlAction({
+          type: 'mousedown',
+          button: e.button,
+          x: x,
+          y: y
+        });
       });
 
       remoteScreen.addEventListener('mouseup', (e) => {
         activeButtons[e.button] = false;
 
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          const rect = remoteScreen.getBoundingClientRect();
-          const x = (e.clientX - rect.left) / rect.width;
-          const y = (e.clientY - rect.top) / rect.height;
+        const rect = remoteScreen.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        const y = (e.clientY - rect.top) / rect.height;
 
-          ws.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'mouseup',
-              button: e.button,
-              x: x,
-              y: y
-            }
-          }));
-        }
+        sendControlAction({
+          type: 'mouseup',
+          button: e.button,
+          x: x,
+          y: y
+        });
       });
 
       remoteScreen.addEventListener('contextmenu', (e) => {
@@ -384,38 +387,36 @@
       });
 
       window.addEventListener('keydown', (e) => {
-        if (ws && ws.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+        if (sessionView.style.display === 'flex') {
           // Ignorar se digitar nos campos do modal de configurações
           if (document.activeElement.tagName === 'INPUT') return;
           
           if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
             e.preventDefault();
           }
-          ws.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'keydown',
-              code: e.code
-            }
-          }));
+          sendControlAction({
+            type: 'keydown',
+            code: e.code
+          });
         }
       });
 
       window.addEventListener('keyup', (e) => {
-        if (ws && ws.readyState === WebSocket.OPEN && sessionView.style.display === 'flex') {
+        if (sessionView.style.display === 'flex') {
           if (document.activeElement.tagName === 'INPUT') return;
-          ws.send(JSON.stringify({
-            type: 'input',
-            action: {
-              type: 'keyup',
-              code: e.code
-            }
-          }));
+          sendControlAction({
+            type: 'keyup',
+            code: e.code
+          });
         }
       });
     }
 
     function closePeerConnection() {
+      if (inputChannel) {
+        try { inputChannel.close(); } catch {}
+        inputChannel = null;
+      }
       if (pc) {
         try {
           pc.close();
@@ -435,6 +436,15 @@
           { urls: 'stun:stun1.l.google.com:19302' }
         ]
       });
+
+      // Cria o canal de dados P2P para envio de inputs de controle
+      try {
+        inputChannel = pc.createDataChannel("input-control", { ordered: true });
+        inputChannel.onopen = () => log('Canal de controle P2P (DataChannel) ativado!', 'success');
+        inputChannel.onclose = () => log('Canal de controle P2P (DataChannel) desativado.', 'info');
+      } catch (e) {
+        console.error("Erro ao criar DataChannel:", e);
+      }
 
       // Escuta o recebimento da faixa de vídeo
       pc.ontrack = (event) => {

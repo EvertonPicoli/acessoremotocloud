@@ -642,6 +642,9 @@ function connectToCentralServer() {
   });
 
   wsClient.on('open', () => {
+    if (wsClient._socket) {
+      wsClient._socket.setNoDelay(true);
+    }
     console.log('✅ Conexão estabelecida com o servidor central!');
   });
 
@@ -722,6 +725,26 @@ function connectToCentralServer() {
                 peerConnection.connectionState === 'failed' || 
                 peerConnection.connectionState === 'closed') {
               closePeerConnection();
+            }
+          };
+
+          peerConnection.ondatachannel = (event) => {
+            const channel = event.channel;
+            if (channel.label === 'input-control') {
+              console.log('Canal de dados P2P (input-control) recebido e ativo!');
+              channel.onmessage = (e) => {
+                try {
+                  const action = JSON.parse(e.data);
+                  if (action.type === 'mousemove' && inputQueue.length > 0 && inputQueue[inputQueue.length - 1].type === 'mousemove') {
+                    inputQueue[inputQueue.length - 1] = action;
+                  } else {
+                    inputQueue.push(action);
+                  }
+                  scheduleInputProcessor();
+                } catch (err) {
+                  console.error('Erro ao processar input do DataChannel:', err.message);
+                }
+              };
             }
           };
 

@@ -217,6 +217,7 @@
      let controlWs = null; // WebSocket secundário para controle de tela ativo
      let touchMode = localStorage.getItem('touch-mode') || 'trackpad'; // trackpad, direct, zoom-pan
     let pc = null; // RTCPeerConnection para WebRTC
+    let inputChannel = null; // RTCDataChannel para inputs P2P
     let pingInterval = null;
     let selectedAgentId = null;
     let selectedAgentName = '';
@@ -340,6 +341,21 @@
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       controlWs = new WebSocket(`${protocol}//${window.location.host}/ws?role=client&targetId=${agentId}`);
+
+      // Monkey-patch controlWs.send para redirecionar comandos pelo canal P2P DataChannel
+      const originalSend = controlWs.send;
+      controlWs.send = function (data) {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'input') {
+            if (inputChannel && inputChannel.readyState === 'open') {
+              inputChannel.send(JSON.stringify(parsed.action));
+              return;
+            }
+          }
+        } catch (e) {}
+        originalSend.apply(this, arguments);
+      };
 
       controlWs.onopen = () => {
         log('Canal de conexão aberto. Autenticando com o PIN no agente...', 'info');
@@ -888,6 +904,10 @@
     }
 
     function closePeerConnection() {
+      if (inputChannel) {
+        try { inputChannel.close(); } catch {}
+        inputChannel = null;
+      }
       if (pc) {
         try {
           pc.onicecandidate = null;
@@ -911,6 +931,15 @@
           { urls: 'stun:stun1.l.google.com:19302' }
         ]
       });
+
+      // Cria o canal de dados P2P para envio de inputs de controle
+      try {
+        inputChannel = pc.createDataChannel("input-control", { ordered: true });
+        inputChannel.onopen = () => log('Canal de controle P2P (DataChannel) ativado!', 'success');
+        inputChannel.onclose = () => log('Canal de controle P2P (DataChannel) desativado.', 'info');
+      } catch (e) {
+        console.error("Erro ao criar DataChannel:", e);
+      }
 
       // Escuta o recebimento da faixa de vídeo
       pc.ontrack = (event) => {

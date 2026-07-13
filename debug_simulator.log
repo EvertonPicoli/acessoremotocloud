@@ -108,3 +108,8 @@
 [2026-07-13 12:58:53.472] CaptureLoop thread iniciada.
 [2026-07-13 12:58:53.473] CaptureLoop monitor mudou para index: 0. Total: 4. Bounds: {X=0,Y=0,Width=2560,Height=1080}
 [2026-07-13 12:59:05.829] Recebido comando de frames: {"type":"stop_capture"}
+[2026-07-13 13:02:50.868] === InputSimulator.exe Iniciado ===
+[2026-07-13 13:03:21.598] Recebido comando de frames: {"type":"start_capture"}
+[2026-07-13 13:03:21.601] CaptureLoop thread iniciada.
+[2026-07-13 13:03:21.602] CaptureLoop monitor mudou para index: 0. Total: 4. Bounds: {X=0,Y=0,Width=2560,Height=1080}
+[2026-07-13 13:04:04.101] Recebido comando de frames: {"type":"stop_capture"}

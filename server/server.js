@@ -128,6 +128,7 @@ function broadcastAgentList() {
 
 // Upgrade HTTP para WebSocket
 server.on('upgrade', (request, socket, head) => {
+  socket.setNoDelay(true); // Desabilita algoritmo de Nagle
   const parsedUrl = url.parse(request.url, true);
   const pathname = parsedUrl.pathname;
   const role = parsedUrl.query.role;
