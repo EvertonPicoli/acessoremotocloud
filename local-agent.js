@@ -695,7 +695,7 @@ function connectToCentralServer() {
             ]
           });
 
-          // Adiciona a faixa de vídeo capturada do C# ao WebRTC associada ao stream
+           // Adiciona a faixa de vídeo capturada do C# ao WebRTC associada ao stream
           const sender = peerConnection.addTrack(videoTrack, mediaStream);
           try {
             const parameters = sender.getParameters();
@@ -703,11 +703,49 @@ function connectToCentralServer() {
               parameters.encodings = [{}];
             }
             parameters.degradationPreference = 'maintain-resolution';
+            parameters.encodings[0].maxBitrate = 2500000; // 2.5 Mbps para evitar gargalos em servidores Relay (TURN)
+            parameters.encodings[0].maxFramerate = 30; // Garante limite estável de 30 FPS no codificador do WebRTC
             sender.setParameters(parameters).catch(err => {
-              console.warn('Não foi possível setar degradationPreference no sender:', err.message);
+              console.warn('Não foi possível setar degradationPreference/bitrate/framerate no sender:', err.message);
             });
           } catch (e) {
             console.warn('Erro ao configurar RTCRtpSender:', e.message);
+          }
+
+          // Configurar preferência de Codec (AV1 > VP9 > VP8 > H264)
+          try {
+            const transceiver = peerConnection.getTransceivers().find(t => t.sender === sender);
+            if (transceiver && wrtc.RTCRtpSender && typeof wrtc.RTCRtpSender.getCapabilities === 'function') {
+              const capabilities = wrtc.RTCRtpSender.getCapabilities('video');
+              if (capabilities && capabilities.codecs) {
+                const sortedCodecs = [];
+                
+                const av1 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/av1');
+                if (av1.length > 0) sortedCodecs.push(...av1);
+                
+                const vp9 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp9');
+                if (vp9.length > 0) sortedCodecs.push(...vp9);
+                
+                const vp8 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp8');
+                if (vp8.length > 0) sortedCodecs.push(...vp8);
+                
+                const h264 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264');
+                if (h264.length > 0) sortedCodecs.push(...h264);
+                
+                capabilities.codecs.forEach(c => {
+                  if (!sortedCodecs.includes(c)) {
+                    sortedCodecs.push(c);
+                  }
+                });
+                
+                if (typeof transceiver.setCodecPreferences === 'function') {
+                  transceiver.setCodecPreferences(sortedCodecs);
+                  console.log('Preferência de Codec definida no Agente: AV1 > VP9 > VP8 > H264');
+                }
+              }
+            }
+          } catch (codecErr) {
+            console.warn('Não foi possível definir preferências de codec no agente:', codecErr.message);
           }
 
           peerConnection.onicecandidate = (event) => {

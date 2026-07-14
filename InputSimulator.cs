@@ -354,7 +354,7 @@ class InputSimulator
             {
                 Console.Error.WriteLine("Error capturing screen: " + ex.Message);
             }
-            System.Threading.Thread.Sleep(25); // ~40 FPS
+            System.Threading.Thread.Sleep(33); // ~30 FPS
         }
     }
 

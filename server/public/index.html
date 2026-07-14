@@ -997,7 +997,40 @@
 
       try {
         // Solicita recebimento de vídeo
-        pc.addTransceiver('video', { direction: 'recvonly' });
+        const transceiver = pc.addTransceiver('video', { direction: 'recvonly' });
+        try {
+          if (RTCRtpReceiver && typeof RTCRtpReceiver.getCapabilities === 'function') {
+            const capabilities = RTCRtpReceiver.getCapabilities('video');
+            if (capabilities && capabilities.codecs) {
+              const sortedCodecs = [];
+              
+              const av1 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/av1');
+              if (av1.length > 0) sortedCodecs.push(...av1);
+              
+              const vp9 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp9');
+              if (vp9.length > 0) sortedCodecs.push(...vp9);
+              
+              const vp8 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp8');
+              if (vp8.length > 0) sortedCodecs.push(...vp8);
+              
+              const h264 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264');
+              if (h264.length > 0) sortedCodecs.push(...h264);
+              
+              capabilities.codecs.forEach(c => {
+                if (!sortedCodecs.includes(c)) {
+                  sortedCodecs.push(c);
+                }
+              });
+              
+              if (typeof transceiver.setCodecPreferences === 'function') {
+                transceiver.setCodecPreferences(sortedCodecs);
+                log('Preferência de Codec definida: AV1 > VP9 > VP8 > H264', 'info');
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Não foi possível configurar codecPreferences no receptor:", e);
+        }
 
         // Cria a oferta de conexão (SDP Offer)
         const offer = await pc.createOffer();
