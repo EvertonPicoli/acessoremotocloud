@@ -1,0 +1,15 @@
+[2026-07-14 12:16:56.325] === InputSimulator.exe Iniciado ===
+[2026-07-14 12:17:17.013] Recebido comando de frames: {"type":"start_capture"}
+[2026-07-14 12:17:17.015] CaptureLoop thread iniciada.
+[2026-07-14 12:17:17.017] CaptureLoop monitor mudou para index: 0. Total: 4. Bounds: {X=0,Y=0,Width=2560,Height=1080}
+[2026-07-14 12:17:29.431] Recebido comando de frames: {"type":"stop_capture"}
+[2026-07-14 12:17:34.849] Recebido comando de frames: {"type":"start_capture"}
+[2026-07-14 12:17:34.850] CaptureLoop thread iniciada.
+[2026-07-14 12:17:34.850] CaptureLoop monitor mudou para index: 0. Total: 4. Bounds: {X=0,Y=0,Width=2560,Height=1080}
+[2026-07-14 12:17:53.014] Recebido comando de frames: {"type":"stop_capture"}
+[2026-07-14 12:18:26.643] Recebido comando de frames: {"type":"start_capture"}
+[2026-07-14 12:18:26.653] CaptureLoop thread iniciada.
+[2026-07-14 12:18:26.654] CaptureLoop monitor mudou para index: 0. Total: 4. Bounds: {X=0,Y=0,Width=2560,Height=1080}
+[2026-07-14 12:18:38.591] Recebido comando de frames: {"type":"stop_capture"}
+[2026-07-14 16:06:35.781] === InputSimulator.exe Iniciado ===
+[2026-07-15 15:20:26.109] === InputSimulator.exe Iniciado ===
