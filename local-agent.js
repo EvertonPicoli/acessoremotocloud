@@ -699,11 +699,11 @@ function connectToCentralServer() {
           };
 
           peerConnection.onconnectionstatechange = () => {
-            console.log(`WebRTC Connection State: ${peerConnection.connectionState}`);
-            if (peerConnection.connectionState === 'disconnected' || 
-                peerConnection.connectionState === 'failed' || 
-                peerConnection.connectionState === 'closed') {
-              closePeerConnection();
+            if (peerConnection) {
+              console.log(`WebRTC Connection State: ${peerConnection.connectionState}`);
+              if (peerConnection.connectionState === 'closed') {
+                closePeerConnection();
+              }
             }
           };
 

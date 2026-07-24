@@ -1022,8 +1022,6 @@
         if (pc.connectionState === 'connected') {
           placeholder.style.display = 'none';
           remoteScreen.style.display = 'block';
-        } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-          closePeerConnection();
         }
       };
 
