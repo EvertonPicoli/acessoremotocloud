@@ -276,34 +276,10 @@ const VK_MAP = {
   'Backquote': 0xC0, 'BracketLeft': 0xDB, 'Backslash': 0xDC, 'BracketRight': 0xDD, 'Quote': 0xDE
 };
 
+// Input simulator é manipulado diretamente via C# InputSimulator.exe
 let psInputHelper = null;
-
-function startInputHelper() {
-  const scriptPath = path.join(__dirname, 'scratch', 'input-helper.ps1');
-  console.log('Iniciando input-helper.ps1 em background...');
-  psInputHelper = spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath]);
-
-  psInputHelper.stdout.on('data', (data) => {
-    const msg = data.toString().trim();
-    if (msg) console.log(`[InputHelper] STDOUT: ${msg}`);
-  });
-
-  psInputHelper.stderr.on('data', (data) => {
-    console.error(`[InputHelper] STDERR: ${data.toString().trim()}`);
-  });
-
-  psInputHelper.on('close', (code) => {
-    console.warn(`[InputHelper] Processo fechado com código ${code}. Reiniciando...`);
-    setTimeout(startInputHelper, 1000);
-  });
-}
-
-startInputHelper();
-
 function sendInputToHelper(cmd) {
-  if (psInputHelper && psInputHelper.stdin.writable) {
-    psInputHelper.stdin.write(cmd + '\n');
-  }
+  // Mantido para compatibilidade
 }
 
 // 3. Iniciar o processo do InputSimulator (com janela visível para manter privilégios interativos)
