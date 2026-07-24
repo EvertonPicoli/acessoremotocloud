@@ -461,10 +461,9 @@ let cachedI420Frame = null;
 let cachedRgbaFrame = null;
 
 function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
-  // Envia frame apenas se houver conexão ativa estabelecida
+  // 1. Envia via WebRTC P2P se a conexão de vídeo direto estiver estabelecida
   if (peerConnection && peerConnection.connectionState === 'connected') {
     try {
-      // Re-aloca ou cria o buffer I420 cacheado se a resolução mudar ou for a primeira execução
       if (!cachedI420Frame || cachedI420Frame.width !== width || cachedI420Frame.height !== height) {
         cachedI420Frame = {
           width: width,
@@ -485,14 +484,26 @@ function handleIncomingRgbaFrame(width, height, rgbaBuffer) {
         data: cachedRgbaFrame
       };
 
-      // Realiza a conversão de RGBA para I420 in-place na memória cacheada
       rgbaToI420(rgbaFrame, cachedI420Frame);
-
-      // Injeta o frame I420 convertido no WebRTC
       videoSource.onFrame(cachedI420Frame);
     } catch (err) {
       console.error('Erro ao injetar frame no WebRTC:', err.message);
     }
+  } 
+  // 2. Fallback WebSocket Relay para redes 4G/5G que bloqueiam portas P2P
+  else if (isAuthenticated && wsClient && wsClient.readyState === WebSocket.OPEN) {
+    try {
+      // Transmissão via WebSocket Relay (Nuvem)
+      if (!global.lastFrameTime || Date.now() - global.lastFrameTime > 80) { // ~12 FPS no Fallback 5G
+        global.lastFrameTime = Date.now();
+        wsClient.send(JSON.stringify({
+          type: 'frame-header',
+          width: width,
+          height: height
+        }));
+        wsClient.send(rgbaBuffer);
+      }
+    } catch (err) {}
   }
 }
 
@@ -665,64 +676,18 @@ function connectToCentralServer() {
 
           peerConnection = new wrtc.RTCPeerConnection({
             iceServers: [
-              { urls: 'stun:stun.cloudflare.com:3478' },
               { urls: 'stun:stun.l.google.com:19302' },
-              { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+              { urls: 'stun:stun1.l.google.com:19302' },
+              { urls: 'stun:stun2.l.google.com:19302' },
+              { urls: 'stun:stun.cloudflare.com:3478' },
+              { urls: 'stun:stun.services.mozilla.com' },
+              { urls: 'stun:global.stun.twilio.com:3478' }
+            ],
+            iceTransportPolicy: 'all'
           });
 
-           // Adiciona a faixa de vídeo capturada do C# ao WebRTC associada ao stream
-          const sender = peerConnection.addTrack(videoTrack, mediaStream);
-          try {
-            const parameters = sender.getParameters();
-            if (!parameters.encodings) {
-              parameters.encodings = [{}];
-            }
-            parameters.degradationPreference = 'maintain-resolution';
-            parameters.encodings[0].maxBitrate = 2500000; // 2.5 Mbps para evitar gargalos em servidores Relay (TURN)
-            parameters.encodings[0].maxFramerate = 30; // Garante limite estável de 30 FPS no codificador do WebRTC
-            sender.setParameters(parameters).catch(err => {
-              console.warn('Não foi possível setar degradationPreference/bitrate/framerate no sender:', err.message);
-            });
-          } catch (e) {
-            console.warn('Erro ao configurar RTCRtpSender:', e.message);
-          }
-
-          // Configurar preferência de Codec (AV1 > VP9 > VP8 > H264)
-          try {
-            const transceiver = peerConnection.getTransceivers().find(t => t.sender === sender);
-            if (transceiver && wrtc.RTCRtpSender && typeof wrtc.RTCRtpSender.getCapabilities === 'function') {
-              const capabilities = wrtc.RTCRtpSender.getCapabilities('video');
-              if (capabilities && capabilities.codecs) {
-                const sortedCodecs = [];
-                
-                const av1 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/av1');
-                if (av1.length > 0) sortedCodecs.push(...av1);
-                
-                const vp9 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp9');
-                if (vp9.length > 0) sortedCodecs.push(...vp9);
-                
-                const vp8 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/vp8');
-                if (vp8.length > 0) sortedCodecs.push(...vp8);
-                
-                const h264 = capabilities.codecs.filter(c => c.mimeType.toLowerCase() === 'video/h264');
-                if (h264.length > 0) sortedCodecs.push(...h264);
-                
-                capabilities.codecs.forEach(c => {
-                  if (!sortedCodecs.includes(c)) {
-                    sortedCodecs.push(c);
-                  }
-                });
-                
-                if (typeof transceiver.setCodecPreferences === 'function') {
-                  transceiver.setCodecPreferences(sortedCodecs);
-                  console.log('Preferência de Codec definida no Agente: AV1 > VP9 > VP8 > H264');
-                }
-              }
-            }
-          } catch (codecErr) {
-            console.warn('Não foi possível definir preferências de codec no agente:', codecErr.message);
-          }
+          // Adiciona a faixa de vídeo capturada ao WebRTC
+          peerConnection.addTrack(videoTrack, mediaStream);
 
           peerConnection.onicecandidate = (event) => {
             if (event.candidate && wsClient && wsClient.readyState === WebSocket.OPEN) {

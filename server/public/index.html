@@ -365,7 +365,31 @@
         }));
       };
 
+      controlWs.binaryType = 'arraybuffer';
       controlWs.onmessage = async (message) => {
+        if (message.data instanceof ArrayBuffer) {
+          if (window._pendingFrameHeader) {
+            const { width, height } = window._pendingFrameHeader;
+            const rgbaData = new Uint8ClampedArray(message.data);
+            if (!window._fallbackCanvas) {
+              window._fallbackCanvas = document.createElement('canvas');
+              window._fallbackCtx = window._fallbackCanvas.getContext('2d');
+            }
+            if (window._fallbackCanvas.width !== width || window._fallbackCanvas.height !== height) {
+              window._fallbackCanvas.width = width;
+              window._fallbackCanvas.height = height;
+            }
+            const imgData = new ImageData(rgbaData, width, height);
+            window._fallbackCtx.putImageData(imgData, 0, 0);
+            remoteScreen.src = window._fallbackCanvas.toDataURL('image/jpeg', 0.6);
+            if (remoteScreen.style.display === 'none') {
+              placeholder.style.display = 'none';
+              remoteScreen.style.display = 'block';
+            }
+          }
+          return;
+        }
+
         const raw = message.data;
         const data = JSON.parse(raw);
 
@@ -402,6 +426,10 @@
             log(`Erro de autenticação: ${data.message}`, 'error');
             alert(`Erro de autenticação: ${data.message}`);
             resetToDashboard();
+            break;
+
+          case 'frame-header':
+            window._pendingFrameHeader = { width: data.width, height: data.height };
             break;
 
           case 'webrtc-answer':
@@ -926,10 +954,14 @@
 
       pc = new RTCPeerConnection({
         iceServers: [
-          { urls: 'stun:stun.cloudflare.com:3478' },
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
-        ]
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun.cloudflare.com:3478' },
+          { urls: 'stun:stun.services.mozilla.com' },
+          { urls: 'stun:global.stun.twilio.com:3478' }
+        ],
+        iceTransportPolicy: 'all'
       });
 
       // Cria o canal de dados P2P para envio de inputs de controle
