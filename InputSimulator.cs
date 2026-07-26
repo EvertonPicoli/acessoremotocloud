@@ -570,6 +570,42 @@ class InputSimulator
                                             keybd_event((byte)vk, scanCode, KEYEVENTF_KEYUP, IntPtr.Zero);
                                         }
                                     }
+                                    else if (type == "ctrlaltdel")
+                                    {
+                                        try
+                                        {
+                                            LogToAgent("[Simulator] Executando simulação de Ctrl+Alt+Del...");
+                                            // Pressiona Ctrl (0x11), Alt (0x12), Del (0x2E)
+                                            keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                            keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
+
+                                            System.Threading.Thread.Sleep(100);
+
+                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
+                                            keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
+                                            keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            LogToAgent("[Simulator] Erro ao enviar Ctrl+Alt+Del: " + ex.Message);
+                                        }
+                                    }
+                                    else if (type == "setclipboard")
+                                    {
+                                        Regex textRegex = new Regex("\"text\"\\s*:\\s*\"([^\"]*)\"", RegexOptions.Compiled);
+                                        Match textMatch = textRegex.Match(line);
+                                        if (textMatch.Success)
+                                        {
+                                            string text = textMatch.Groups[1].Value;
+                                            System.Threading.Thread staThread = new System.Threading.Thread(() =>
+                                            {
+                                                try { System.Windows.Forms.Clipboard.SetText(text); } catch {}
+                                            });
+                                            staThread.SetApartmentState(System.Threading.ApartmentState.STA);
+                                            staThread.Start();
+                                        }
+                                    }
                                 }
                                 catch {}
                             }

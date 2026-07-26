@@ -83,6 +83,19 @@
           <button id="touch-settings-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #60a5fa;">
             👆 Entrada por Toque
           </button>
+          <button id="ctrlaltdel-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(245, 158, 11, 0.2); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24;">
+            🔑 Ctrl+Alt+Del
+          </button>
+          <button id="printscreen-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
+            📸 PrintScreen
+          </button>
+          <button id="clipboard-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
+            📋 Enviar Texto
+          </button>
+          <label class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; cursor: pointer; margin: 0; display: inline-flex; align-items: center;">
+            📁 Enviar Arquivo
+            <input type="file" id="upload-file-input" style="display: none;">
+          </label>
           <button id="fullscreen-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
             📺 Tela Cheia
           </button>
@@ -420,6 +433,16 @@
             
             // Inicia negociação WebRTC P2P
             initWebRtcConnection();
+            break;
+
+          case 'upload-success':
+            log(`Arquivo '${data.filename}' enviado com sucesso para a pasta Downloads do PC remoto!`, 'success');
+            alert(`Arquivo '${data.filename}' recebido no PC remoto!`);
+            break;
+
+          case 'upload-error':
+            log(`Erro ao enviar arquivo: ${data.message}`, 'error');
+            alert(`Erro no upload: ${data.message}`);
             break;
 
           case 'auth-error':
@@ -1114,6 +1137,76 @@
     disconnectBtn.addEventListener('click', () => {
       resetToDashboard();
     });
+
+    // Ações dos novos botões de controle
+    const ctrlAltDelBtn = document.getElementById('ctrlaltdel-btn');
+    if (ctrlAltDelBtn) {
+      ctrlAltDelBtn.addEventListener('click', () => {
+        log('Enviando comando Ctrl+Alt+Del para o computador remoto...', 'info');
+        if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({ type: 'ctrlaltdel' }));
+        }
+      });
+    }
+
+    const printScreenBtn = document.getElementById('printscreen-btn');
+    if (printScreenBtn) {
+      printScreenBtn.addEventListener('click', () => {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = remoteScreen.videoWidth || remoteScreen.naturalWidth || 1920;
+          canvas.height = remoteScreen.videoHeight || remoteScreen.naturalHeight || 1080;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(remoteScreen, 0, 0, canvas.width, canvas.height);
+
+          const a = document.createElement('a');
+          a.href = canvas.toDataURL('image/png');
+          a.download = `PrintScreen_${selectedAgentName}_${Date.now()}.png`;
+          a.click();
+          log('Captura de tela salva com sucesso no seu dispositivo!', 'success');
+        } catch (e) {
+          log(`Erro ao tirar PrintScreen: ${e.message}`, 'error');
+        }
+      });
+    }
+
+    const clipboardBtn = document.getElementById('clipboard-btn');
+    if (clipboardBtn) {
+      clipboardBtn.addEventListener('click', () => {
+        const text = prompt('Digite ou cole o texto que deseja enviar para a Área de Transferência do PC remoto:');
+        if (text !== null && controlWs && controlWs.readyState === WebSocket.OPEN) {
+          controlWs.send(JSON.stringify({ type: 'set-clipboard', text: text }));
+          log('Texto enviado para o clipboard do PC remoto!', 'success');
+        }
+      });
+    }
+
+    const uploadFileInput = document.getElementById('upload-file-input');
+    if (uploadFileInput) {
+      uploadFileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        if (file.size > 50 * 1024 * 1024) {
+          alert('Por favor, selecione arquivos de até 50MB.');
+          return;
+        }
+
+        log(`Enviando arquivo ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`, 'info');
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64Data = reader.result.split(',')[1];
+          if (controlWs && controlWs.readyState === WebSocket.OPEN) {
+            controlWs.send(JSON.stringify({
+              type: 'upload-file',
+              filename: file.name,
+              base64Data: base64Data
+            }));
+          }
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
     // Controle de modo de visualização (ajustar, tamanho original, esticar)
     viewModeSelect.addEventListener('change', () => {

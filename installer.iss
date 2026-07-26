@@ -26,7 +26,8 @@ Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortugue
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar um ícone na Área de Trabalho"; GroupDescription: "Ícones adicionais:"; Flags: unchecked
-Name: "startup"; Description: "Iniciar automaticamente com o Windows"; GroupDescription: "Configurações de Inicialização:"
+Name: "startup"; Description: "Iniciar automaticamente com o Windows (Sessão do Usuário)"; GroupDescription: "Configurações de Inicialização:"
+Name: "winservice"; Description: "Instalar como Serviço do Windows (Inicia antes do Logon do Usuário)"; GroupDescription: "Configurações de Inicialização:"; Flags: unchecked
 
 [Files]
 Source: "c:\Users\Innova\Documents\GitHub\acessoremotocloud\InnovaRemoteAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
@@ -45,11 +46,15 @@ Type: filesandordirs; Name: "{localappdata}\InnovaRemoteAgent"
 Type: filesandordirs; Name: "{app}"
 
 [UninstallRun]
+Filename: "sc.exe"; Parameters: "stop InnovaRemoteService"; Flags: runhidden
+Filename: "sc.exe"; Parameters: "delete InnovaRemoteService"; Flags: runhidden
 Filename: "taskkill"; Parameters: "/F /IM InnovaRemoteAgent.exe"; Flags: runhidden
 Filename: "taskkill"; Parameters: "/F /IM InputSimulator.exe"; Flags: runhidden
 
 [Run]
-Description: "Iniciar o Innova Remote Agent agora (em background)"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppLauncherName}"" ""{app}\{#MyAppExeName}"""; Flags: nowait postinstall skipifsilent
+Filename: "sc.exe"; Parameters: "create InnovaRemoteService binPath= ""{app}\{#MyAppExeName}"" start= auto DisplayName= ""Innova Remote Agent Service"""; Flags: runhidden; Tasks: winservice
+Filename: "sc.exe"; Parameters: "start InnovaRemoteService"; Flags: runhidden; Tasks: winservice
+Description: "Iniciar o Innova Remote Agent agora (em background)"; Filename: "wscript.exe"; Parameters: """{app}\{#MyAppLauncherName}"" ""{app}\{#MyAppExeName}"""; Flags: nowait postinstall skipifsilent; Tasks: not winservice
 
 [Code]
 var

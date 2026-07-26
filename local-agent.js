@@ -765,6 +765,30 @@ function connectToCentralServer() {
           }
         }
 
+        else if (data.type === 'ctrlaltdel') {
+          console.log('[Agente] Comando Ctrl+Alt+Del recebido do cliente.');
+          sendToSimulator({ type: 'ctrlaltdel' });
+        }
+
+        else if (data.type === 'set-clipboard') {
+          console.log('[Agente] Atualizando área de transferência no computador remoto...');
+          sendToSimulator({ type: 'setclipboard', text: data.text });
+        }
+
+        else if (data.type === 'upload-file') {
+          try {
+            const downloadsDir = path.join(os.homedir(), 'Downloads');
+            const targetPath = path.join(downloadsDir, data.filename);
+            const buffer = Buffer.from(data.base64Data, 'base64');
+            fs.writeFileSync(targetPath, buffer);
+            console.log(`[Agente] Arquivo recebido com sucesso: ${targetPath}`);
+            wsClient.send(JSON.stringify({ type: 'upload-success', filename: data.filename }));
+          } catch (err) {
+            console.error('[Agente] Erro ao salvar arquivo recebido:', err.message);
+            wsClient.send(JSON.stringify({ type: 'upload-error', message: err.message }));
+          }
+        }
+
         else if (data.type === 'input') {
           const action = data.action;
           
