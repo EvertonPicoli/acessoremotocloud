@@ -92,10 +92,13 @@
           <button id="clipboard-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
             📋 Enviar Texto
           </button>
-          <label class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; cursor: pointer; margin: 0; display: inline-flex; align-items: center;">
-            📁 Enviar Arquivo
+          <label class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; cursor: pointer; margin: 0; display: inline-flex; align-items: center; background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.4); color: #34d399;">
+            ⬆️ Enviar Arquivo
             <input type="file" id="upload-file-input" style="display: none;">
           </label>
+          <button id="download-file-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto; background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.4); color: #a78bfa;">
+            ⬇️ Receber Arquivo
+          </button>
           <button id="fullscreen-btn" class="btn btn-secondary" style="padding: 0.25rem 0.75rem; font-size: 0.8rem; height: auto;">
             📺 Tela Cheia
           </button>
@@ -438,6 +441,30 @@
           case 'upload-success':
             log(`Arquivo '${data.filename}' enviado com sucesso para a pasta Downloads do PC remoto!`, 'success');
             alert(`Arquivo '${data.filename}' recebido no PC remoto!`);
+            break;
+
+          case 'download-success':
+            try {
+              const byteCharacters = atob(data.base64Data);
+              const byteNumbers = new Array(byteCharacters.length);
+              for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+              }
+              const byteArray = new Uint8Array(byteNumbers);
+              const blob = new Blob([byteArray]);
+              const link = document.createElement('a');
+              link.href = URL.createObjectURL(blob);
+              link.download = data.filename;
+              link.click();
+              log(`Arquivo '${data.filename}' baixado com sucesso!`, 'success');
+            } catch (e) {
+              log(`Erro ao processar arquivo baixado: ${e.message}`, 'error');
+            }
+            break;
+
+          case 'download-error':
+            log(`Erro ao baixar arquivo do PC remoto: ${data.message}`, 'error');
+            alert(`Erro no download: ${data.message}`);
             break;
 
           case 'upload-error':
@@ -1205,6 +1232,20 @@
           }
         };
         reader.readAsDataURL(file);
+      });
+    }
+
+    const downloadFileBtn = document.getElementById('download-file-btn');
+    if (downloadFileBtn) {
+      downloadFileBtn.addEventListener('click', () => {
+        const filepath = prompt('Digite o caminho completo do arquivo no PC remoto para baixar:\n(Exemplo: C:\\Users\\Public\\Documento.pdf ou C:\\pasta\\arquivo.txt)');
+        if (filepath && controlWs && controlWs.readyState === WebSocket.OPEN) {
+          log(`Solicitando download do arquivo: ${filepath}...`, 'info');
+          controlWs.send(JSON.stringify({
+            type: 'download-file',
+            filepath: filepath
+          }));
+        }
       });
     }
 

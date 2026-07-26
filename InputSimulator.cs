@@ -31,6 +31,9 @@ class InputSimulator
         catch {}
     }
 
+    [DllImport("sas.dll", SetLastError = true, CallingConvention = CallingConvention.StdCall)]
+    private static extern void SendSAS(bool AsUser);
+
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
 
@@ -101,6 +104,7 @@ class InputSimulator
     const uint MOUSEEVENTF_MIDDLEUP = 0x0040;
 
     const uint KEYEVENTF_KEYDOWN = 0x0000;
+    const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
     const uint KEYEVENTF_KEYUP = 0x0002;
 
     static volatile bool isCapturing = false;
@@ -574,15 +578,24 @@ class InputSimulator
                                     {
                                         try
                                         {
-                                            LogToAgent("[Simulator] Executando simulação de Ctrl+Alt+Del...");
-                                            // Pressiona Ctrl (0x11), Alt (0x12), Del (0x2E)
-                                            keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
-                                            keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
-                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero);
+                                            LogToAgent("[Simulator] Tentando enviar SAS (Ctrl+Alt+Del) via sas.dll...");
+                                            try
+                                            {
+                                                SendSAS(false);
+                                            }
+                                            catch (Exception sasEx)
+                                            {
+                                                LogToAgent("[Simulator] SendSAS falhou (" + sasEx.Message + "), usando simulação estendida...");
+                                            }
 
-                                            System.Threading.Thread.Sleep(100);
+                                            // Simulação via Virtual Key Codes estendidos
+                                            keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero); // VK_CONTROL
+                                            keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYDOWN, IntPtr.Zero); // VK_MENU (ALT)
+                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYDOWN, IntPtr.Zero); // VK_DELETE (Extended)
 
-                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
+                                            System.Threading.Thread.Sleep(150);
+
+                                            keybd_event(0x2E, (byte)MapVirtualKey(0x2E, 0), KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP, IntPtr.Zero);
                                             keybd_event(0x12, (byte)MapVirtualKey(0x12, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
                                             keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), KEYEVENTF_KEYUP, IntPtr.Zero);
                                         }

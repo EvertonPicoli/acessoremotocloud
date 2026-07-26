@@ -789,6 +789,34 @@ function connectToCentralServer() {
           }
         }
 
+        else if (data.type === 'download-file') {
+          try {
+            const requestedPath = data.filepath;
+            if (!requestedPath || !fs.existsSync(requestedPath)) {
+              wsClient.send(JSON.stringify({ type: 'download-error', message: 'Arquivo não encontrado na máquina remota.' }));
+              return;
+            }
+
+            const stats = fs.statSync(requestedPath);
+            if (stats.size > 50 * 1024 * 1024) {
+              wsClient.send(JSON.stringify({ type: 'download-error', message: 'O arquivo excede o limite máximo de 50MB.' }));
+              return;
+            }
+
+            const fileBuffer = fs.readFileSync(requestedPath);
+            const filename = path.basename(requestedPath);
+            console.log(`[Agente] Enviando arquivo para o cliente: ${filename} (${stats.size} bytes)`);
+            wsClient.send(JSON.stringify({
+              type: 'download-success',
+              filename: filename,
+              base64Data: fileBuffer.toString('base64')
+            }));
+          } catch (err) {
+            console.error('[Agente] Erro ao ler arquivo solicitado para download:', err.message);
+            wsClient.send(JSON.stringify({ type: 'download-error', message: err.message }));
+          }
+        }
+
         else if (data.type === 'input') {
           const action = data.action;
           
